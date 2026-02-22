@@ -1,0 +1,31 @@
+<html>
+<head>
+    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body style="background-color: #f0f0f0; display: flex; flex-direction: column; align-items: center;">
+    <h3>Visualizzazione Struttura: 4v6x</h3>
+    
+    <div id="container" style="height: 600px; width: 800px; position: relative; border: 2px solid #ccc; background: white;"></div>
+
+    <script>
+        $(document).ready(function() {
+    
+            let path = "4V6X.cif/4v6x.cif";
+            
+            let element = $('#container');
+            let config = { backgroundColor: 'white' };
+            let viewer = $3Dmol.createViewer(element, config);
+
+            $.get(path, function(data) {
+                viewer.addModel(data, "cif");
+                viewer.setStyle({}, {stick: {radius: 0.2, colorscheme: 'Jmol'}});
+                viewer.zoomTo();
+                viewer.render();
+            }).fail(function() {
+                alert("Errore: Impossibile trovare il file al percorso specificato. Verifica la console (F12).");
+            });
+        });
+    </script>
+</body>
+</html>
