@@ -14,12 +14,24 @@
             <label>1. Struttura:
                 <select id="riboSelect">
                     <option value="4v6x">Homo sapiens 80S (4v6x)</option>
-                    </select>
+                </select>
             </label>
             <button id="loadCifBtn">Carica dal Server</button>
             
-            <label style="margin-left: 30px;">2. Dati (JSON): <input type="file" id="jsonFile" accept=".json"></label>
+            <label style="margin-left: 15px;">2. Dati JSON: <input type="file" id="jsonFile" accept=".json"></label>
+            
+            <label style="margin-left: 15px;">
+                Opacità RNA: 
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.3">
+            </label>
+
+            <button id="resetZoomBtn" style="margin-left: 15px;">Resetta Zoom</button>
+
+            <label style="margin-left: 15px; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px;">
+                <input type="checkbox" id="toggleUnknown" checked> Mostra posizioni non note
+            </label>
         </div>
+    </div>
     </div>
 
     <div class="main-container">
@@ -31,8 +43,11 @@
         <div class="sidebar">
             <h2>Legenda</h2>
             <div id="legend">
-                <div class="legend-item"><span class="color-box" style="background: #CCCCCC;"></span> Residuo standard</div>
-                <div class="legend-item"><span class="color-box" style="background: #E74C3C;"></span> mC (Metilcitosina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #CCCCCC;"></span> RNA standard</div>
+                <div class="legend-item"><span class="color-box" style="background: #E74C3C;"></span> m₅C (Metilcitosina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #3498DB;"></span> m₆A (Metiladenosina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #2ECC71;"></span> Ψ (Pseudouridina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #F39C12;"></span> Posizione int. (Non nota)</div>
             </div>
 
             <h2>Residui Modificati</h2>

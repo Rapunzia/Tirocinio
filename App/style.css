@@ -65,19 +65,27 @@ body {
 }
 
 #modList {
-    list-style-type: none;
+    display: grid;
+    /* Crea automaticamente colonne flessibili che si adattano allo spazio */
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 4px;
     padding: 0;
+    list-style-type: none;
 }
 
 #modList li {
     background: #ecf0f1;
-    margin-bottom: 8px;
-    padding: 10px;
-    border-radius: 4px;
-    border-left: 4px solid #E74C3C;
-    font-size: 14px;
+    margin-bottom: 0; 
+    padding: 4px; /* Padding ridotto */
+    border-radius: 3px;
+    border-left: 3px solid #CCCCCC;
+    font-size: 10px; /* Testo ancora più piccolo */
+    line-height: 1.1;
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap; /* Evita che il testo vada a capo, risparmiando spazio verticale */
+    text-overflow: ellipsis;
 }
-
 #modList .empty-msg {
     border-left: none;
     background: transparent;
@@ -103,7 +111,7 @@ body {
 }
 
 #modList li:hover {
-    background: #e0e6ed;
-    transform: translateX(2px);
+    background: #d5dde5;
+    transform: translateY(-1px);
     transition: all 0.2s ease;
 }
