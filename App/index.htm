@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizzatore Modifiche 28S (4v6x)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>Mappa delle Modifiche - rRNA 28S</h1>
+        <div class="controls">
+            <label>1. Struttura:
+                <select id="riboSelect">
+                    <option value="4v6x">Homo sapiens 80S (4v6x)</option>
+                    </select>
+            </label>
+            <button id="loadCifBtn">Carica dal Server</button>
+            
+            <label style="margin-left: 30px;">2. Dati (JSON): <input type="file" id="jsonFile" accept=".json"></label>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div id="viewer-container">
+            <div id="gldiv"></div>
+            <div id="tooltip" class="hidden"></div>
+        </div>
+
+        <div class="sidebar">
+            <h2>Legenda</h2>
+            <div id="legend">
+                <div class="legend-item"><span class="color-box" style="background: #CCCCCC;"></span> Residuo standard</div>
+                <div class="legend-item"><span class="color-box" style="background: #E74C3C;"></span> mC (Metilcitosina)</div>
+            </div>
+
+            <h2>Residui Modificati</h2>
+            <ul id="modList">
+                <li class="empty-msg">Carica i file per visualizzare la lista...</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
