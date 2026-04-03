@@ -1,5 +1,4 @@
-// Stato Globale dell'App
-let currentEngine = '3dmol'; // Può essere '3dmol' o 'molstar'
+let currentEngine = '3dmol';
 let structureDataText = null; 
 let modifications = [];
 let currentOpacity = 0.3;
@@ -7,10 +6,10 @@ let currentOpacity = 0.3;
 // Istanze dei Motori
 let viewer3Dmol = null;
 let viewerMolstar = null;
-let viewerNgl = null; // Il "Stage" di NGL
-let nglComponent = null; // La molecola caricata in NGL
+let viewerNgl = null;
+let nglComponent = null;
 
-// Dizionari Colori
+// Dizionari
 const colorMap3Dmol = {
     'mC': '#E74C3C', 'm6a': '#3498DB', 'm6A': '#3498DB', 'Y': '#2ECC71', 'Psi': '#2ECC71',
     'unknown': '#F39C12', 'none': '#CCCCCC', 'default': '#9B59B6'
@@ -39,7 +38,7 @@ const rnaConfig = {
 };
 let currentRibo = "4v6x";
 
-// --- LOGICA DI SCAMBIO MOTORE (SWAP) ---
+// --- LOGICA DI SCAMBIO MOTORE ---
 document.getElementById('engineSelect').addEventListener('change', (e) => {
     currentEngine = e.target.value;
 
@@ -144,7 +143,7 @@ function renderActiveEngine() {
             }
             break;
 
-        // --- 4. BLOCCO NGL (FUTURO) ---
+        // --- 4. BLOCCO NGL ---
         case 'ngl':
             if (!viewerNgl) {
                 viewerNgl = new NGL.Stage("gldiv-ngl", { backgroundColor: "white" });
@@ -371,7 +370,7 @@ function applyMolstarStyles() {
         viewerMolstar.visual.select({ data: selectionData, nonSelectedColor: colorMapMolstar['none'].rgb });
     }
 }
-
+// Stili JSmol
 function applyJSmolStyles() {
     if (!window.myJmol) return;
     const config = rnaConfig[currentRibo];
@@ -401,7 +400,7 @@ function applyJSmolStyles() {
     script += "select none;"; // Deseleziona tutto alla fine
     Jmol.script(myJmol, script);
 }
-
+//Stili NGL
 function applyNglStyles() {
     if (!viewerNgl || !nglComponent) return;
     
