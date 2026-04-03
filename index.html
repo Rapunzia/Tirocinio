@@ -1,31 +1,104 @@
-<html>
+<!DOCTYPE html>
+<html lang="it">
 <head>
-    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Benchmark 28S - Mol* vs 3Dmol</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pdbe-molstar@3.2.0/build/pdbe-molstar-light-plugin.css">
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/pdbe-molstar@3.2.0/build/pdbe-molstar-plugin.js"></script>
+    <script type="text/javascript" src="https://chemapps.stolaf.edu/jmol/jsmol/JSmol.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ngl@2.3.0/dist/ngl.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+
+    <style>
+        /* CSS per gestire i due strati grafici in modo non distruttivo */
+        .viewer-layer {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .hidden-engine {
+            display: none !important;
+            z-index: -1;
+        }
+        .active-engine {
+            display: block !important;
+            z-index: 10;
+        }
+    </style>
 </head>
-<body style="background-color: #f0f0f0; display: flex; flex-direction: column; align-items: center;">
-    <h3>Visualizzazione Struttura: 4v6x</h3>
-    
-    <div id="container" style="height: 600px; width: 800px; position: relative; border: 2px solid #ccc; background: white;"></div>
-
-    <script>
-        $(document).ready(function() {
-    
-            let path = "4V6X.cif/4v6x.cif";
+<body>
+    <div class="header" style="height: auto; padding: 15px 20px;">
+        <h1 style="margin-bottom: 10px;">Mappa Modifiche - Piattaforma di Benchmark</h1>
+        
+        <div class="controls" style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
             
-            let element = $('#container');
-            let config = { backgroundColor: 'white' };
-            let viewer = $3Dmol.createViewer(element, config);
+            <label style="font-weight: bold; background: #2980b9; padding: 5px 10px; border-radius: 4px;">Motore:
+                <select id="engineSelect" style="margin-left: 5px;">
+                    <option value="3dmol">3Dmol.js</option>
+                    <option value="molstar">Mol*</option>
+                    <option value="jsmol">JSmol</option>
+                    <option value="ngl">NGL Viewer</option>
+                </select>
+            </label>
 
-            $.get(path, function(data) {
-                viewer.addModel(data, "cif");
-                viewer.setStyle({}, {stick: {radius: 0.2, colorscheme: 'Jmol'}});
-                viewer.zoomTo();
-                viewer.render();
-            }).fail(function() {
-                alert("Errore: Impossibile trovare il file al percorso specificato. Verifica la console (F12).");
-            });
-        });
-    </script>
+            <label>1. Struttura:
+                <select id="riboSelect">
+                    <option value="4v6x">Homo sapiens 80S (4v6x)</option>
+                </select>
+            </label>
+            <button id="loadCifBtn">Carica molecola</button>
+            
+            <label>2. Dati JSON: <input type="file" id="jsonFile" accept=".json"></label>
+            
+            <label id="ui-opacity" style="display: flex; align-items: center; gap: 5px;">
+                Opacità RNA: 
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.3">
+            </label>
+
+            <label style="background: rgba(0,0,0,0.2); padding: 5px 10px; border-radius: 4px; white-space: nowrap; cursor: pointer;">
+                <input type="checkbox" id="toggleUnknown" checked> Mostra posizioni non note
+            </label>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div id="viewer-container" style="position: relative; flex: 3; background: white;">
+            
+            <div id="gldiv-3dmol" class="viewer-layer active-engine"></div>
+            
+            <div id="tooltip" style="position: fixed; background: rgba(0,0,0,0.85); color: white; padding: 10px 15px; border-radius: 5px; pointer-events: none; z-index: 1000; font-size: 14px; display: none;"></div>
+
+            <div id="gldiv-molstar" class="viewer-layer hidden-engine"></div>
+
+            <div id="gldiv-jsmol" class="viewer-layer hidden-engine"></div>
+
+            <div id="gldiv-ngl" class="viewer-layer hidden-engine"></div>
+            
+        </div>
+
+        <div class="sidebar">
+            <h2>Legenda</h2>
+            <div id="legend">
+                <div class="legend-item"><span class="color-box" style="background: #CCCCCC;"></span> RNA standard</div>
+                <div class="legend-item"><span class="color-box" style="background: #E74C3C;"></span> m₅C (Metilcitosina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #3498DB;"></span> m₆A (Metiladenosina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #2ECC71;"></span> Ψ (Pseudouridina)</div>
+                <div class="legend-item"><span class="color-box" style="background: #F39C12;"></span> Posizione int. (Non nota)</div>
+            </div>
+
+            <h2>Residui Modificati</h2>
+            <ul id="modList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 4px; padding: 0; list-style-type: none;">
+                <li class="empty-msg" style="grid-column: 1 / -1;">Carica i file per la lista...</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
 </html>
