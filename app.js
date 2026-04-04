@@ -28,11 +28,11 @@ const rnaConfig = {
     "4v6x": {
         file: "4v6x.cif",
         chains: {
-            "28S":  { struct: "IC", auth: "A5", defaultColor: "#555555" }, // Dark grey
-            "18S":  { struct: "JA", auth: "B2", defaultColor: "#E6E6E6" }, // Grigio chiarissimo
-            "5.8S": { struct: "KC", auth: "A8", defaultColor: "#FFD700" }, // Yellow
-            "5S":   { struct: "JC", auth: "A7", defaultColor: "#4169E1" }, // Blue
-            "tRNA": { struct: "KA", auth: "BC", defaultColor: "#90EE90" }  // Light green
+            "28S":  { struct: "IC", auth: "A5", defaultColor: "#555555" }, 
+            "18S":  { struct: "JA", auth: "B2", defaultColor: "#E6E6E6" }, 
+            "5.8S": { struct: "KC", auth: "A8", defaultColor: "#FFD700" }, 
+            "5S":   { struct: "JC", auth: "A7", defaultColor: "#4169E1" }, 
+            "tRNA": { struct: "KA", auth: "BC", defaultColor: "#90EE90" }  
         }
     }
 };
@@ -146,7 +146,7 @@ document.getElementById('toggleUnknown').addEventListener('change', () => {
     }
 });
 
-document.getElementById('opacitySlider').addEventListener('change', function(e) {
+document.getElementById('opacitySlider').addEventListener('input', function(e) {
     currentOpacity = parseFloat(e.target.value);
     if (currentEngine === '3dmol' && viewer3Dmol) apply3DmolStyles(); 
     if (currentEngine === 'jsmol' && window.myJmol) applyJSmolStyles();
@@ -254,15 +254,13 @@ function buildList() {
                     viewer3Dmol.zoomTo(sel, 1000);
                     viewer3Dmol.setStyle(sel, { cartoon: { color: '#F1C40F' }, sphere: { radius: 1.8, color: '#F1C40F' } });
                     viewer3Dmol.render();
-                    setTimeout(() => apply3DmolStyles(), 1500);
+                    setTimeout(() => apply3DmolStyles(), 1500); 
                 } else if (currentEngine === 'molstar' && viewerMolstar) {
                     viewerMolstar.visual.focus([{ struct_asym_id: targetStruct, start_residue_number: resi, end_residue_number: resi }]);
                 } else if (currentEngine === 'jsmol' && window.myJmol) {
-                    // JSmol: Zoom e creazione Sfera gigante gialla al click
                     Jmol.script(window.myJmol, `zoomto 1 (resno=${resi} and chain=${targetAuth}) 300; select (resno=${resi} and chain=${targetAuth}); spacefill 2.0; color spacefill [xF1C40F];`);
                     setTimeout(() => applyJSmolStyles(), 1500);
                 } else if (currentEngine === 'ngl' && viewerNgl && nglComponent) {
-                    // NGL: Zoom e creazione Sfera gigante gialla al click
                     let sele = `${resi}:${targetAuth}`;
                     let seleObj = new NGL.Selection(sele);
                     viewerNgl.animationControls.zoomTo(nglComponent.structure.getView(seleObj), 1000);
@@ -284,15 +282,15 @@ function hexToRgb(hex) {
 }
 
 // ==========================================
-// 3. APPLICAZIONE STILI AI MOTORI (MODALITA' SFERE)
+// 3. APPLICAZIONE STILI AI MOTORI (PULITO)
 // ==========================================
 
-async function apply3DmolStyles() {
+function apply3DmolStyles() {
     if (!viewer3Dmol) return;
     
     const config = rnaConfig[currentRibo];
-    viewer3Dmol.setStyle({}, { cartoon: { color: '#E0E0E0', opacity: currentOpacity } });
     
+    viewer3Dmol.setStyle({}, { cartoon: { color: '#E0E0E0', opacity: currentOpacity } });
     Object.values(config.chains).forEach(ch => {
         if (ch.auth && ch.defaultColor) {
             viewer3Dmol.setStyle({chain: ch.auth}, { cartoon: { color: ch.defaultColor, opacity: currentOpacity } });
@@ -300,47 +298,36 @@ async function apply3DmolStyles() {
     });
     
     const showUnknown = document.getElementById('toggleUnknown').checked;
-    const tooltip = document.getElementById('tooltip');
+    const styleGroups = {};
 
-    const chunkSize = 50; 
-    for (let i = 0; i < modifications.length; i += chunkSize) {
-        const chunk = modifications.slice(i, i + chunkSize);
+    modifications.forEach(mod => {
+        const resi = mod["Positions in the Structure"];
+        const isMod = mod["Knwon Positions Modifications"] === "Y"; 
+        const typeStr = mod["Type Structure"];
+        const targetAuth = config.chains[typeStr] ? config.chains[typeStr].auth : typeStr;
 
-        chunk.forEach(mod => {
-            const resi = mod["Positions in the Structure"];
-            const isMod = mod["Knwon Positions Modifications"] === "Y"; 
-            const typeStr = mod["Type Structure"];
-            const targetAuth = config.chains[typeStr] ? config.chains[typeStr].auth : typeStr;
-
-            if (residueExists(resi, targetAuth) && (isMod || showUnknown)) {
-                const modRaw = mod["Possible Modifications"];
-                const paletteObj = getModificationColor(modRaw, isMod);
-                const color = paletteObj.hex;
-                const displayMod = isMod ? formatModText(modRaw) : 'Unknown';
-
-                const sel = { chain: targetAuth, resi: resi.toString() };
-                
-                viewer3Dmol.setStyle(sel, { 
-                    cartoon: { color: color, opacity: 1.0 }, 
-                    sphere: { radius: 1.2, color: color }
-                });
-
-                viewer3Dmol.setHoverable(sel, true,
-                    function(atom, viewer, event) {
-                        if (!atom.labelCreated) {
-                            tooltip.innerHTML = `<strong>Residue:</strong> ${resi} (${typeStr})<br><strong>Modification:</strong> ${displayMod}`;
-                            tooltip.style.left = (event.clientX + 15) + 'px';
-                            tooltip.style.top = (event.clientY + 15) + 'px';
-                            tooltip.style.display = 'block';
-                            atom.labelCreated = true;
-                        }
-                    },
-                    function(atom) { tooltip.style.display = 'none'; atom.labelCreated = false; }
-                );
+        if (residueExists(resi, targetAuth) && (isMod || showUnknown)) {
+            const modRaw = mod["Possible Modifications"];
+            const paletteObj = getModificationColor(modRaw, isMod);
+            const color = paletteObj.hex;
+            
+            const groupKey = `${targetAuth}|${color}`;
+            if (!styleGroups[groupKey]) {
+                styleGroups[groupKey] = { chain: targetAuth, color: color, resi: [] };
             }
+            styleGroups[groupKey].resi.push(resi);
+        }
+    });
+
+    Object.values(styleGroups).forEach(group => {
+        const sel = { chain: group.chain, resi: group.resi }; 
+        
+        viewer3Dmol.setStyle(sel, { 
+            cartoon: { color: group.color, opacity: 1.0 }, 
+            sphere: { radius: 1.2, color: group.color }
         });
-        await new Promise(resolve => setTimeout(resolve, 0));
-    }
+    });
+
     viewer3Dmol.render();
 }
 
@@ -371,7 +358,6 @@ function applyMolstarStyles() {
             const modRaw = mod["Possible Modifications"];
             const paletteObj = getModificationColor(modRaw, isMod);
             
-            // Molstar usa representationColor per generare un overlay se supportato
             selectionData.push({
                 struct_asym_id: targetStruct, start_residue_number: resi, end_residue_number: resi,
                 color: paletteObj.rgb, 
@@ -393,7 +379,6 @@ function applyJSmolStyles() {
     const config = rnaConfig[currentRibo];
     const showUnknown = document.getElementById('toggleUnknown').checked;
     
-    // 1. Resetta spazio: spegne sfere vecchie, imposta cartoon e sfondi
     let script = `select all; cartoon only; spacefill off; color cartoon [xE0E0E0]; `;
     
     Object.values(config.chains).forEach(ch => {
@@ -405,7 +390,7 @@ function applyJSmolStyles() {
     
     script += `select all; color cartoon translucent ${1.0 - currentOpacity}; `;
     
-    // 2. Colora le modifiche e applica spacefill (sfere)
+    const styleGroups = {};
     modifications.forEach(mod => {
         const resi = mod["Positions in the Structure"];
         const isMod = mod["Knwon Positions Modifications"] === "Y"; 
@@ -415,10 +400,16 @@ function applyJSmolStyles() {
         if (residueExists(resi, targetAuth) && (isMod || showUnknown)) {
             const modRaw = mod["Possible Modifications"];
             const paletteObj = getModificationColor(modRaw, isMod);
-            let jsmolColor = paletteObj.hex.replace('#', '[x') + ']';
-            // Aggiunta: 'spacefill 1.5' (sfera) e colorazione solida
-            script += `select (resno=${resi} and chain=${targetAuth}); color cartoon opaque; color cartoon ${jsmolColor}; spacefill 1.5; color spacefill ${jsmolColor}; `;
+            const groupKey = `${targetAuth}|${paletteObj.hex}`;
+            if (!styleGroups[groupKey]) styleGroups[groupKey] = { chain: targetAuth, color: paletteObj.hex, resi: [] };
+            styleGroups[groupKey].resi.push(resi);
         }
+    });
+
+    Object.values(styleGroups).forEach(group => {
+        const resiList = group.resi.join(",");
+        const jsmolColor = group.color.replace('#', '[x') + ']';
+        script += `select (resno=${resiList} and chain=${group.chain}); color cartoon opaque; color cartoon ${jsmolColor}; spacefill 1.5; color spacefill ${jsmolColor}; `;
     });
     
     script += "select none;"; 
@@ -445,7 +436,7 @@ function applyNglStyles() {
         depthWrite: currentOpacity === 1.0
     });
     
-    // Aggiunge le sfere (spacefill) in NGL
+    const styleGroups = {};
     modifications.forEach(mod => {
         const resi = mod["Positions in the Structure"];
         const isMod = mod["Knwon Positions Modifications"] === "Y"; 
@@ -455,11 +446,15 @@ function applyNglStyles() {
         if (residueExists(resi, targetAuth) && (isMod || showUnknown)) {
             const modRaw = mod["Possible Modifications"];
             const paletteObj = getModificationColor(modRaw, isMod);
-            let sele = `${resi}:${targetAuth}`;
-            
-            nglComponent.addRepresentation("cartoon", { sele: sele, color: paletteObj.hex, opacity: 1.0 });
-            // Sostituito 'licorice' con 'spacefill' (sfere) e ridotto leggermente lo scale per non ingombrare troppo
-            nglComponent.addRepresentation("spacefill", { sele: sele, color: paletteObj.hex, opacity: 1.0, scale: 0.8 });
+            const groupKey = `${targetAuth}|${paletteObj.hex}`;
+            if (!styleGroups[groupKey]) styleGroups[groupKey] = { chain: targetAuth, color: paletteObj.hex, resi: [] };
+            styleGroups[groupKey].resi.push(resi);
         }
+    });
+
+    Object.values(styleGroups).forEach(group => {
+        const sele = `${group.resi.join(",")}:${group.chain}`;
+        nglComponent.addRepresentation("cartoon", { sele: sele, color: group.color, opacity: 1.0 });
+        nglComponent.addRepresentation("spacefill", { sele: sele, color: group.color, opacity: 1.0, scale: 0.8 });
     });
 }
