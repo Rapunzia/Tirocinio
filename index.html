@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>28S Benchmark - Mol* vs 3Dmol</title>
+    <title>28S Benchmark - Modifications Map</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pdbe-molstar@3.2.0/build/pdbe-molstar-light-plugin.css">
@@ -14,13 +14,7 @@
     <link rel="stylesheet" href="style.css">
 
     <style>
-        .viewer-layer {
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
+        .viewer-layer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
         .hidden-engine { display: none !important; z-index: -1; }
         .active-engine { display: block !important; z-index: 10; }
     </style>
@@ -31,8 +25,8 @@
         
         <div class="controls">
             <div class="control-group engine-badge">
-                <label style="cursor:pointer;">Engine:
-                    <select id="engineSelect" style="color:black;">
+                <label style="cursor:pointer; display:flex; align-items:center;">Engine:
+                    <select id="engineSelect" style="margin-left:8px;">
                         <option value="3dmol">3Dmol.js</option>
                         <option value="molstar">Mol*</option>
                         <option value="jsmol">JSmol</option>
@@ -42,7 +36,7 @@
             </div>
 
             <div class="control-group">
-                <label>1. Structure:
+                <label>Structure:
                     <select id="riboSelect">
                         <option value="4v6x">Homo sapiens 80S (4v6x)</option>
                     </select>
@@ -51,11 +45,13 @@
             </div>
             
             <div class="control-group">
-                <label>2. JSON Data: <input type="file" id="jsonFile" accept=".json"></label>
+                <label>JSON Data: <input type="file" id="jsonFile" accept=".json"></label>
             </div>
             
             <div class="control-group" id="ui-opacity">
-                <label>RNA Opacity: <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.3"></label>
+                <label style="display:flex; align-items:center;">Opacity: 
+                    <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.3">
+                </label>
             </div>
 
             <div class="control-group">
@@ -68,7 +64,6 @@
 
     <div class="main-container">
         <div id="viewer-container">
-            
             <div class="floating-legend" id="floatingLegend">
                 <div class="legend-header" onclick="document.getElementById('legendContent').classList.toggle('collapsed'); this.querySelector('span:last-child').textContent = document.getElementById('legendContent').classList.contains('collapsed') ? '▼' : '▲';">
                     <span>LEGEND</span>
@@ -78,7 +73,7 @@
                 <div class="legend-content" id="legendContent">
                     <div class="legend-group-title">RNA Backbones</div>
                     <div class="legend-item"><span class="color-box" style="background: #555555;"></span> 28S rRNA</div>
-                    <div class="legend-item"><span class="color-box" style="background: #A0A0A0;"></span> 18S rRNA</div>
+                    <div class="legend-item"><span class="color-box" style="background: #E6E6E6;"></span> 18S rRNA</div>
                     <div class="legend-item"><span class="color-box" style="background: #FFD700;"></span> 5.8S rRNA</div>
                     <div class="legend-item"><span class="color-box" style="background: #4169E1;"></span> 5S rRNA</div>
                     <div class="legend-item"><span class="color-box" style="background: #90EE90;"></span> tRNA</div>
