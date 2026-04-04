@@ -3,107 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>28S Benchmark - Modifications Map</title>
-    
+    <title>28S Benchmark — Modifications Map</title>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pdbe-molstar@3.2.0/build/pdbe-molstar-light-plugin.css">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/pdbe-molstar@3.2.0/build/pdbe-molstar-plugin.js"></script>
     <script type="text/javascript" src="https://chemapps.stolaf.edu/jmol/jsmol/JSmol.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ngl@2.3.0/dist/ngl.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="style.css">
-
-    <style>
-        .viewer-layer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
-        .hidden-engine { display: none !important; z-index: -1; }
-        .active-engine { display: block !important; z-index: 10; }
-    </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Modifications Map - Benchmark Platform</h1>
-        
-        <div class="controls">
-            <div class="control-group engine-badge">
-                <label style="cursor:pointer; display:flex; align-items:center;">Engine:
-                    <select id="engineSelect" style="margin-left:8px;">
-                        <option value="3dmol">3Dmol.js</option>
-                        <option value="molstar">Mol*</option>
-                        <option value="jsmol">JSmol</option>
-                        <option value="ngl">NGL Viewer</option>
-                    </select>
-                </label>
-            </div>
 
-            <div class="control-group">
-                <label>Structure:
-                    <select id="riboSelect">
-                        <option value="4v6x">Homo sapiens 80S (4v6x)</option>
-                    </select>
-                </label>
-                <button id="loadCifBtn">Load Molecule</button>
-            </div>
-            
-            <div class="control-group">
-                <label>JSON Data: <input type="file" id="jsonFile" accept=".json"></label>
-            </div>
-            
-            <div class="control-group" id="ui-opacity">
-                <label style="display:flex; align-items:center;">Opacity: 
-                    <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.3">
-                </label>
-            </div>
-
-            <div class="control-group">
-                <label style="cursor: pointer;">
-                    <input type="checkbox" id="toggleUnknown" checked> Show unknown
-                </label>
-            </div>
-        </div>
+<!-- TOP HEADER BAR -->
+<header class="topbar">
+    <div class="topbar-brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">28S Benchmark</span>
+        <span class="brand-sub">Modifications Map</span>
     </div>
 
-    <div class="main-container">
-        <div id="viewer-container">
-            <div class="floating-legend" id="floatingLegend">
-                <div class="legend-header" onclick="document.getElementById('legendContent').classList.toggle('collapsed'); this.querySelector('span:last-child').textContent = document.getElementById('legendContent').classList.contains('collapsed') ? '▼' : '▲';">
-                    <span>LEGEND</span>
-                    <span>▲</span>
-                </div>
-                
-                <div class="legend-content" id="legendContent">
-                    <div class="legend-group-title">RNA Backbones</div>
-                    <div class="legend-item"><span class="color-box" style="background: #555555;"></span> 28S rRNA</div>
-                    <div class="legend-item"><span class="color-box" style="background: #E6E6E6;"></span> 18S rRNA</div>
-                    <div class="legend-item"><span class="color-box" style="background: #FFD700;"></span> 5.8S rRNA</div>
-                    <div class="legend-item"><span class="color-box" style="background: #4169E1;"></span> 5S rRNA</div>
-                    <div class="legend-item"><span class="color-box" style="background: #90EE90;"></span> tRNA</div>
-                    
-                    <div class="legend-group-title">Modifications</div>
-                    <div class="legend-item"><span class="color-box" style="background: #00E676;"></span> Domain I (Ψ)</div>
-                    <div class="legend-item"><span class="color-box" style="background: #2979FF;"></span> Domain R (Ribose)</div>
-                    <div class="legend-item"><span class="color-box" style="background: #FF1744;"></span> Domain B (Base)</div>
-                    <div class="legend-item"><span class="color-box" style="background: #D500F9;"></span> Mix: Base+Ribose</div>
-                    <div class="legend-item"><span class="color-box" style="background: #00E5FF;"></span> Mix: Ψ+Ribose</div>
-                    <div class="legend-item"><span class="color-box" style="background: #FF9100;"></span> Complex (ac, D)</div>
-                    <div class="legend-item"><span class="color-box" style="background: #000000;"></span> Hyper-Variable</div>
-                    <div class="legend-item"><span class="color-box" style="background: #FFEA00;"></span> Unknown</div>
-                </div>
+    <nav class="topbar-controls">
+        <!-- Engine selector -->
+        <div class="ctrl-pill engine-pill">
+            <span class="ctrl-label">Engine</span>
+            <select id="engineSelect">
+                <option value="3dmol">3Dmol.js</option>
+                <option value="molstar">Mol*</option>
+                <option value="jsmol">JSmol</option>
+                <option value="ngl">NGL</option>
+            </select>
+        </div>
+
+        <!-- Structure selector + load -->
+        <div class="ctrl-pill">
+            <span class="ctrl-label">Structure</span>
+            <select id="riboSelect">
+                <option value="4v6x">Homo sapiens 80S (4v6x)</option>
+            </select>
+            <button id="loadCifBtn" class="btn-load">
+                <span class="btn-icon">⬡</span> Load
+            </button>
+        </div>
+
+        <!-- JSON upload -->
+        <div class="ctrl-pill upload-pill" id="uploadPill">
+            <span class="ctrl-label">JSON</span>
+            <label class="file-label" for="jsonFile">
+                <span id="fileNameDisplay">Choose file…</span>
+                <input type="file" id="jsonFile" accept=".json">
+            </label>
+        </div>
+
+        <!-- Opacity -->
+        <div class="ctrl-pill" id="ui-opacity">
+            <span class="ctrl-label">Opacity</span>
+            <div class="slider-wrap">
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.3">
+                <span id="opacityVal">0.3</span>
             </div>
-
-            <div id="gldiv-3dmol" class="viewer-layer active-engine"></div>
-            <div id="gldiv-molstar" class="viewer-layer hidden-engine"></div>
-            <div id="gldiv-jsmol" class="viewer-layer hidden-engine"></div>
-            <div id="gldiv-ngl" class="viewer-layer hidden-engine"></div>
         </div>
 
-        <div class="sidebar">
-            <h2 style="margin-top: 0;">Modified Residues</h2>
-            <ul id="modList">
-                <li class="empty-msg">Load files to see the list...</li>
-            </ul>
+        <!-- Toggle unknown -->
+        <div class="ctrl-pill toggle-pill">
+            <label class="toggle-switch">
+                <input type="checkbox" id="toggleUnknown" checked>
+                <span class="toggle-track">
+                    <span class="toggle-thumb"></span>
+                </span>
+            </label>
+            <span class="ctrl-label">Unknown</span>
         </div>
+
+        <!-- Export button -->
+        <button class="btn-export" id="exportBtn" title="Export residue list as CSV">
+            ↓ CSV
+        </button>
+    </nav>
+</header>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-box">
+        <div class="spinner"></div>
+        <span id="loadingMsg">Loading structure…</span>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="workspace">
+
+    <!-- VIEWER -->
+    <div id="viewer-container">
+
+        <!-- Floating legend -->
+        <div class="legend-panel" id="legendPanel">
+            <button class="legend-toggle" id="legendToggle" title="Toggle legend">LEGEND ▲</button>
+            <div class="legend-body" id="legendBody">
+                <div class="legend-section-title">RNA Backbones</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#555555"></span>28S rRNA</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#E6E6E6; border:1px solid #bbb"></span>18S rRNA</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#FFD700"></span>5.8S rRNA</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#4169E1"></span>5S rRNA</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#90EE90"></span>tRNA</div>
+                <div class="legend-section-title">Modifications</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#00E676"></span>Ψ (Domain I)</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#2979FF"></span>Ribose (R)</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#FF1744"></span>Base (B)</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#D500F9"></span>Base+Ribose</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#00E5FF"></span>Ψ+Ribose</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#FF9100"></span>Complex (ac, D)</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#111111; border:1px solid #bbb"></span>Hyper-Variable</div>
+                <div class="legend-row"><span class="lswatch" style="--c:#FFEA00; border:1px solid #bbb"></span>Unknown</div>
+            </div>
+        </div>
+
+        <!-- Stats panel -->
+        <div class="stats-panel" id="statsPanel"></div>
+
+        <!-- Engine canvases -->
+        <div id="gldiv-3dmol"  class="viewer-layer active-engine"></div>
+        <div id="gldiv-molstar" class="viewer-layer hidden-engine"></div>
+        <div id="gldiv-jsmol"  class="viewer-layer hidden-engine"></div>
+        <div id="gldiv-ngl"   class="viewer-layer hidden-engine"></div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>Modified Residues</h2>
+            <span class="residue-count" id="residueCount">—</span>
+        </div>
+
+        <!-- Search & filter -->
+        <div class="sidebar-search">
+            <input type="text" id="searchInput" placeholder="Search residue, mod…" autocomplete="off">
+            <select id="filterType">
+                <option value="all">All types</option>
+                <option value="28S">28S</option>
+                <option value="18S">18S</option>
+                <option value="5.8S">5.8S</option>
+                <option value="5S">5S</option>
+                <option value="tRNA">tRNA</option>
+            </select>
+        </div>
+
+        <ul id="modList">
+            <li class="empty-msg">Load files to see residues…</li>
+        </ul>
+    </aside>
+</div>
+
+<!-- TOOLTIP -->
+<div class="tooltip" id="tooltip"></div>
+
+<script src="app.js"></script>
 </body>
 </html>
