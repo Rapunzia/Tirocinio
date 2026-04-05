@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>28S Benchmark — Modifications Map</title>
+    <title>Modifications Map</title>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pdbe-molstar@3.2.0/build/pdbe-molstar-light-plugin.css">
@@ -17,16 +17,8 @@
 </head>
 <body>
 
-<!-- TOP HEADER BAR -->
 <header class="topbar">
-    <div class="topbar-brand">
-        <span class="brand-dot"></span>
-        <span class="brand-name">28S Benchmark</span>
-        <span class="brand-sub">Modifications Map</span>
-    </div>
-
     <nav class="topbar-controls">
-        <!-- Engine selector -->
         <div class="ctrl-pill engine-pill">
             <span class="ctrl-label">Engine</span>
             <select id="engineSelect">
@@ -37,7 +29,6 @@
             </select>
         </div>
 
-        <!-- Structure selector + load -->
         <div class="ctrl-pill">
             <span class="ctrl-label">Structure</span>
             <select id="riboSelect">
@@ -48,7 +39,6 @@
             </button>
         </div>
 
-        <!-- JSON upload -->
         <div class="ctrl-pill upload-pill" id="uploadPill">
             <span class="ctrl-label">JSON</span>
             <label class="file-label" for="jsonFile">
@@ -57,7 +47,6 @@
             </label>
         </div>
 
-        <!-- Opacity -->
         <div class="ctrl-pill" id="ui-opacity">
             <span class="ctrl-label">Opacity</span>
             <div class="slider-wrap">
@@ -66,7 +55,6 @@
             </div>
         </div>
 
-        <!-- Toggle unknown -->
         <div class="ctrl-pill toggle-pill">
             <label class="toggle-switch">
                 <input type="checkbox" id="toggleUnknown" checked>
@@ -76,15 +64,9 @@
             </label>
             <span class="ctrl-label">Unknown</span>
         </div>
-
-        <!-- Export button -->
-        <button class="btn-export" id="exportBtn" title="Export residue list as CSV">
-            ↓ CSV
-        </button>
     </nav>
 </header>
 
-<!-- LOADING OVERLAY -->
 <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-box">
         <div class="spinner"></div>
@@ -93,13 +75,10 @@
     </div>
 </div>
 
-<!-- MAIN LAYOUT -->
 <div class="workspace">
 
-    <!-- VIEWER -->
     <div id="viewer-container">
 
-        <!-- Floating legend -->
         <div class="legend-panel" id="legendPanel">
             <button class="legend-toggle" id="legendToggle" title="Toggle legend">LEGEND ▲</button>
             <div class="legend-body" id="legendBody">
@@ -121,24 +100,18 @@
             </div>
         </div>
 
-        <!-- Stats panel -->
-        <div class="stats-panel" id="statsPanel"></div>
-
-        <!-- Engine canvases -->
         <div id="gldiv-3dmol"  class="viewer-layer active-engine"></div>
         <div id="gldiv-molstar" class="viewer-layer hidden-engine"></div>
         <div id="gldiv-jsmol"  class="viewer-layer hidden-engine"></div>
         <div id="gldiv-ngl"   class="viewer-layer hidden-engine"></div>
     </div>
 
-    <!-- SIDEBAR -->
     <aside class="sidebar">
         <div class="sidebar-header">
             <h2>Modified Residues</h2>
             <span class="residue-count" id="residueCount">—</span>
         </div>
 
-        <!-- Search & filter -->
         <div class="sidebar-search">
             <input type="text" id="searchInput" placeholder="Search residue, mod…" autocomplete="off">
             <select id="filterType">
@@ -156,9 +129,6 @@
         </ul>
     </aside>
 </div>
-
-<!-- TOOLTIP -->
-<div class="tooltip" id="tooltip"></div>
 
 <script src="app.js"></script>
 </body>
