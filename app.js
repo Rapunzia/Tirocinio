@@ -454,7 +454,7 @@ async function apply3DmolStyles() {
                 borderThickness: 1.5,
                 inFront: true,                // Forza la label a stare "sopra" il 3D per non essere tagliata dalla mesh
                 showBackground: true,
-                alignment: 'center'
+                alignment: 'topLeft'
             }, { chain: mod._authChain, resi: resi.toString() });
         });
     }
