@@ -409,15 +409,64 @@ function buildStyleGroups(chainProp) {
 async function apply3DmolStyles() {
     if (!viewer3Dmol) return;
     const config = rnaConfig[currentRibo];
-    viewer3Dmol.setStyle({}, { cartoon: { color: '#E0E0E0', opacity: currentOpacity } });
-    Object.values(config.chains).forEach(ch => { if (ch.auth && ch.defaultColor) viewer3Dmol.setStyle({ chain: ch.auth }, { cartoon: { color: ch.defaultColor, opacity: currentOpacity } }); });
-    buildStyleGroups('_authChain').forEach(g => { viewer3Dmol.setStyle({ chain: g.chain, resi: g.resi }, { cartoon: { color: g.color, opacity: 1.0 }, sphere: { radius: 1.2, color: g.color } }); });
+    const showProteins = document.getElementById('toggleProteins').checked;
+    const showLabels = document.getElementById('toggleLabels').checked; // Leggiamo il toggle
+
+    // Reset totale di tutti gli stili e delle etichette
+    viewer3Dmol.setStyle({}, {}); 
+    viewer3Dmol.removeAllLabels(); // Pulizia essenziale per non sovrapporre testo a ogni ricaricamento
+
+    // 1. STILI BACKBONE
+    if (showProteins) {
+        viewer3Dmol.setStyle({}, { cartoon: { color: '#E0E0E0', opacity: currentOpacity } });
+    }
+    Object.values(config.chains).forEach(ch => { 
+        if (ch.auth && ch.defaultColor) {
+            viewer3Dmol.setStyle({ chain: ch.auth }, { cartoon: { color: ch.defaultColor, opacity: currentOpacity } }); 
+        }
+    });
+
+    // 2. SFERE DELLE MODIFICHE
+    buildStyleGroups('_authChain').forEach(g => { 
+        viewer3Dmol.setStyle({ chain: g.chain, resi: g.resi }, { cartoon: { color: g.color, opacity: 1.0 }, sphere: { radius: 1.2, color: g.color } }); 
+    });
+    
+    // 3. OVERLAY TESTUALE (PAPER-READY)
+    if (showLabels) {
+        const showUnknown = document.getElementById('toggleUnknown').checked;
+        
+        modifications.forEach(mod => {
+            if (!mod._isResolved) return; // Saltiamo se non esiste nel 3D
+            const isMod = mod["Knwon Positions Modifications"] === "Y";
+            if (!isMod && !showUnknown) return; // Rispettiamo il filtro unknown
+
+            const resi = mod["Positions in the Structure"];
+            const text = `${mod._displayMod} ${resi}`; // Esempio: "119 m⁵C"
+
+            // Aggiungiamo la label al centro esatto del residuo
+            viewer3Dmol.addLabel(text, {
+                font: 'sans-serif',
+                fontSize: 14,
+                fontColor: '#111827',         
+                backgroundColor: '#ffffff',   // Sfondo bianco per massima leggibilità
+                backgroundOpacity: 0.85,      // Leggermente traslucido per non coprire del tutto la struttura
+                borderColor: mod._palette.hex, // Il bordo della label riprende il colore della sfera
+                borderThickness: 1.5,
+                inFront: true,                // Forza la label a stare "sopra" il 3D per non essere tagliata dalla mesh
+                showBackground: true,
+                alignment: 'center'
+            }, { chain: mod._authChain, resi: resi.toString() });
+        });
+    }
+
     viewer3Dmol.render();
 }
 
 function applyMolstarStyles() {
     if (!viewerMolstar) return;
     const config = rnaConfig[currentRibo];
+    // Nota: Mol* plugin di default mostra l'intero polimero. Per nascondere le proteine
+    // servirebbe manipolare l'albero di stato. Manteniamo la selezione di base.
     const selectionData = [];
     Object.values(config.chains).forEach(ch => { if (ch.struct && ch.defaultColor) selectionData.push({ struct_asym_id: ch.struct, color: hexToRgb(ch.defaultColor), focus: false }); });
     buildStyleGroups('_structId').forEach(g => { g.resi.forEach(resi => { selectionData.push({ struct_asym_id: g.chain, start_residue_number: resi, end_residue_number: resi, color: g.rgb, focus: false, representation: 'spacefill', representationColor: g.rgb }); }); });
@@ -428,10 +477,27 @@ function applyMolstarStyles() {
 function applyJSmolStyles() {
     if (!window.myJmol) return;
     const config = rnaConfig[currentRibo];
-    let script = `select all; cartoon only; spacefill off; color cartoon [xE0E0E0]; `;
-    Object.values(config.chains).forEach(ch => { if (ch.auth && ch.defaultColor) script += `select chain=${ch.auth}; color cartoon ${ch.defaultColor.replace('#', '[x')}]; `; });
-    script += `select all; color cartoon translucent ${1.0 - currentOpacity}; `;
-    buildStyleGroups('_authChain').forEach(g => { const c = g.color.replace('#', '[x') + ']'; script += `select (resno=${g.resi.join(",")} and chain=${g.chain}); color cartoon opaque; color cartoon ${c}; spacefill 1.5; color spacefill ${c}; `; });
+    const showProteins = document.getElementById('toggleProteins').checked;
+
+    // Spegne tutto di default
+    let script = `select all; spacefill off; wireframe off; cartoon off; `;
+    
+    if (showProteins) {
+        script += `select all; cartoon only; color cartoon [xE0E0E0]; color cartoon translucent ${1.0 - currentOpacity}; `;
+    }
+    
+    // Accende e colora solo l'RNA
+    Object.values(config.chains).forEach(ch => { 
+        if (ch.auth && ch.defaultColor) {
+            script += `select chain=${ch.auth}; cartoon only; color cartoon ${ch.defaultColor.replace('#', '[x')}]; color cartoon translucent ${1.0 - currentOpacity}; `; 
+        }
+    });
+    
+    buildStyleGroups('_authChain').forEach(g => { 
+        const c = g.color.replace('#', '[x') + ']'; 
+        script += `select (resno=${g.resi.join(",")} and chain=${g.chain}); color cartoon opaque; color cartoon ${c}; spacefill 1.5; color spacefill ${c}; `; 
+    });
+    
     script += 'select none;';
     Jmol.script(myJmol, script);
 }
@@ -440,12 +506,102 @@ function applyNglStyles() {
     if (!viewerNgl || !nglComponent) return;
     nglComponent.removeAllRepresentations();
     const config = rnaConfig[currentRibo];
+    const showProteins = document.getElementById('toggleProteins').checked;
+
     let schemeData = [];
-    Object.values(config.chains).forEach(ch => { if (ch.auth && ch.defaultColor) schemeData.push([ch.defaultColor, `:${ch.auth}`]); });
-    schemeData.push(['#E0E0E0', '*']);
-    nglComponent.addRepresentation('cartoon', { color: NGL.ColormakerRegistry.addSelectionScheme(schemeData, 'rnaBackbone'), opacity: currentOpacity, depthWrite: currentOpacity === 1.0 });
-    buildStyleGroups('_authChain').forEach(g => { const sele = `${g.resi.join(',')}:${g.chain}`; nglComponent.addRepresentation('cartoon', { sele, color: g.color, opacity: 1.0 }); nglComponent.addRepresentation('spacefill', { sele, color: g.color, opacity: 1.0, scale: 0.8 }); });
+    let rnaSele = []; // Array per isolare solo le catene RNA
+    
+    Object.values(config.chains).forEach(ch => { 
+        if (ch.auth && ch.defaultColor) {
+            schemeData.push([ch.defaultColor, `:${ch.auth}`]); 
+            rnaSele.push(`:${ch.auth}`);
+        }
+    });
+    
+    if (showProteins) {
+        schemeData.push(['#E0E0E0', '*']);
+        nglComponent.addRepresentation('cartoon', { color: NGL.ColormakerRegistry.addSelectionScheme(schemeData, 'rnaBackbone'), opacity: currentOpacity, depthWrite: currentOpacity === 1.0 });
+    } else {
+        // Genera una selezione stringa tipo ":A5 or :B2 or :A8" e renderizza SOLO quella
+        const sele = rnaSele.join(' or ');
+        nglComponent.addRepresentation('cartoon', { sele: sele, color: NGL.ColormakerRegistry.addSelectionScheme(schemeData, 'rnaBackbone'), opacity: currentOpacity, depthWrite: currentOpacity === 1.0 });
+    }
+    
+    buildStyleGroups('_authChain').forEach(g => { 
+        const sele = `${g.resi.join(',')}:${g.chain}`; 
+        nglComponent.addRepresentation('cartoon', { sele, color: g.color, opacity: 1.0 }); 
+        nglComponent.addRepresentation('spacefill', { sele, color: g.color, opacity: 1.0, scale: 0.8 }); 
+    });
 }
+// ── UTILITY: DOWNLOAD FILE ────────────────────────────────
+function downloadSnapshot(uri, filename) {
+    const link = document.createElement('a');
+    link.href = uri;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// ── SNAPSHOT EXPORT ────────────────────────────────────
+document.getElementById('snapshotBtn').addEventListener('click', () => {
+    if (currentEngine === 'molstar' || currentEngine === 'jsmol') {
+        showToast(`Usa i comandi integrati di ${currentEngine} per l'export.`, true);
+        return;
+    }
+
+    showToast('Rendering 4K in corso... attendere.');
+
+    setTimeout(() => {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `28S_Benchmark_${currentRibo}_${currentEngine}_4K_${timestamp}.png`;
+
+        if (currentEngine === '3dmol' && viewer3Dmol) {
+            const container = document.getElementById('gldiv-3dmol');
+            
+            // 1. Salva lo stato originale
+            const origW = container.style.width;
+            const origH = container.style.height;
+            
+            // 2. Forza dimensioni 4K UHD (invisibile all'utente grazie a overflow:hidden del parent)
+            container.style.width = '3840px';
+            container.style.height = '2160px';
+            viewer3Dmol.resize();
+            viewer3Dmol.render();
+            
+            // 3. Estrai l'immagine
+            const imgData = viewer3Dmol.pngURI();
+            
+            // 4. Ripristina istantaneamente l'interfaccia
+            container.style.width = origW;
+            container.style.height = origH;
+            viewer3Dmol.resize();
+            viewer3Dmol.render();
+            
+            // 5. Scarica
+            downloadSnapshot(imgData, filename);
+            showToast('Snapshot 4K (3Dmol) salvato ✓');
+
+        } else if (currentEngine === 'ngl' && viewerNgl) {
+            // NGL ha il supporto nativo per l'upscaling (factor: 4 = 4x la risoluzione attuale)
+            // Se lo schermo è FHD (1080p), factor 2 fa il 4K. Usiamo 3 o 4 per sicurezza.
+            viewerNgl.makeImage({ 
+                factor: 3, 
+                antialias: true, 
+                trim: false, 
+                transparent: true // Utile per sovrapposizioni su poster
+            }).then(blob => {
+                const url = URL.createObjectURL(blob);
+                downloadSnapshot(url, filename);
+                URL.revokeObjectURL(url);
+                showToast('Snapshot HD (NGL) salvato ✓');
+            }).catch(err => {
+                console.error(err);
+                showToast('Errore durante il rendering NGL.', true);
+            });
+        }
+    }, 100);
+});
 
 // ── EVENT LISTENERS ───────────────────────────────────────
 document.getElementById('engineSelect').addEventListener('change', e => {
@@ -528,4 +684,17 @@ document.getElementById('legendToggle').addEventListener('click', function() {
 document.addEventListener('keydown', e => { 
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; 
     if (e.key === 'l' || e.key === 'L') document.getElementById('legendToggle').click(); 
+});
+// Toggle Proteins Listener
+document.getElementById('toggleProteins').addEventListener('change', () => { 
+    updateCurrentEngineStyles(); 
+});
+document.getElementById('toggleLabels').addEventListener('change', () => { 
+    if (currentEngine !== '3dmol') {
+        showToast('Labels attualmente supportate solo su 3Dmol.', true);
+        // Riporta il toggle a spento visivamente se si tenta di usarlo altrove
+        document.getElementById('toggleLabels').checked = false;
+        return;
+    }
+    updateCurrentEngineStyles(); 
 });
