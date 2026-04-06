@@ -1,11 +1,10 @@
-
 'use strict';
 
 // ── STATE ──────────────────────────────────────────────────
 let currentEngine = '3dmol';
 let structureDataText = null;
 let modifications = [];
-let currentOpacity = 0.3;
+let currentOpacity = 0.85;
 let selectedLi = null;
 
 // Engine instances
@@ -47,8 +46,11 @@ let currentRibo = "4v6x";
 
 // ── UTILS ──────────────────────────────────────────────────
 function hexToRgb(hex) {
+    if (hexToRgbCache[hex]) return hexToRgbCache[hex];
     const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return r ? { r: parseInt(r[1], 16), g: parseInt(r[2], 16), b: parseInt(r[3], 16) } : null;
+    const rgb = r ? { r: parseInt(r[1], 16), g: parseInt(r[2], 16), b: parseInt(r[3], 16) } : null;
+    if (rgb) hexToRgbCache[hex] = rgb;
+    return rgb;
 }
 
 function showToast(msg, isError = false) {
@@ -91,13 +93,11 @@ function buildResidueCache(cifText) {
     while (pos < cifText.length) {
         let nextNewline = cifText.indexOf('\n', pos);
         if (nextNewline === -1) nextNewline = cifText.length;
-        
-        // slice is much faster than split and avoids RAM spikes
+
         const line = cifText.slice(pos, nextNewline).trim();
         pos = nextNewline + 1;
 
         if (!line) continue;
-
         if (line.startsWith('_atom_site.')) {
             inAtomSite = true;
             headers.push(line);
@@ -108,7 +108,7 @@ function buildResidueCache(cifText) {
 
         if (inAtomSite && headers.length > 0) {
             if (line[0] === '_' || line[0] === '#') {
-                if (colSeqId >= 0 && colAuthChain >= 0) break; // Finished parsing atoms
+                if (colSeqId >= 0 && colAuthChain >= 0) break;
                 inAtomSite = false; headers = []; colSeqId = -1; colAuthChain = -1;
                 continue;
             }
@@ -178,14 +178,14 @@ function hydrateModifications() {
         const resi = mod["Positions in the Structure"];
         const isMod = mod["Knwon Positions Modifications"] === "Y";
         const typeStr = mod["Type Structure"];
-        
+
         mod._index = index;
         mod._authChain = config.chains[typeStr] ? config.chains[typeStr].auth : typeStr;
         mod._structId = config.chains[typeStr] ? config.chains[typeStr].struct : typeStr;
         mod._isResolved = residueExists(resi, mod._authChain);
         mod._palette = getModificationColor(mod["Possible Modifications"], isMod);
         mod._displayMod = isMod ? formatModText(mod["Possible Modifications"]) : 'Unknown';
-        
+
         // Cache search string for instant filtering
         mod._searchStr = `${resi} ${mod._displayMod} ${typeStr}`.toLowerCase();
     });
@@ -253,7 +253,7 @@ function applyFilters() {
     });
 
     document.getElementById('residueCount').textContent = visibleCount;
-    
+
     let emptyEl = document.getElementById('emptyMsg');
     if (visibleCount === 0) {
         if (!emptyEl) {
@@ -320,7 +320,7 @@ function destroyEngine(eng) {
             document.getElementById('gldiv-ngl').innerHTML = '';
             viewerNgl = null;
         }
-    } catch(e) { console.warn("Cleanup error for", eng, e); }
+    } catch(e) { console.warn(`Error during cleanup for engine ${eng}:`, e); }
 }
 
 function renderActiveEngine() {
