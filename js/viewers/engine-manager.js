@@ -199,39 +199,44 @@ function createResidueSelection(residue, authChain) {
     return { chain: authChain, resi: residue.toString() };
 }
 
-function getResidueAnchorAtom(residue, authChain) {
+function getResidueBoundingCenter(residue, authChain) {
     if (!appState.viewer3Dmol) return null;
 
-    const model = appState.viewer3Dmol.getModel();
-    if (!model) return null;
-
-    const atoms = model.selectedAtoms(createResidueSelection(residue, authChain));
+    const atoms = appState.viewer3Dmol.selectedAtoms(createResidueSelection(residue, authChain));
     if (!atoms || atoms.length === 0) return null;
 
-    const preferred = atoms.find((atom) => atom.atom === 'P')
-        || atoms.find((atom) => atom.atom === "C4'")
-        || atoms.find((atom) => atom.atom === "C1'")
-        || atoms[0];
+    if (typeof $3Dmol === 'undefined' || typeof $3Dmol.getExtent !== 'function') {
+        return { x: atoms[0].x, y: atoms[0].y, z: atoms[0].z };
+    }
 
-    return { x: preferred.x, y: preferred.y, z: preferred.z };
+    const extent = $3Dmol.getExtent(atoms);
+    if (!Array.isArray(extent) || !Array.isArray(extent[2]) || extent[2].length !== 3) {
+        return { x: atoms[0].x, y: atoms[0].y, z: atoms[0].z };
+    }
+
+    return { x: extent[2][0], y: extent[2][1], z: extent[2][2] };
+}
+
+function buildResidueLabelStyle(colorHex, fontColor = '#111827') {
+    return {
+        font: 'sans-serif',
+        fontSize: 11,
+        fontColor,
+        backgroundColor: '#ffffff',
+        backgroundOpacity: 0.95,
+        borderColor: colorHex,
+        borderThickness: 1.2,
+        inFront: true,
+        showBackground: true,
+        alignment: 'topLeft'
+    };
 }
 
 function addManualResidueLabels() {
     appState.manualLabels.forEach((labelData) => {
         appState.viewer3Dmol.addLabel(
             labelData.text,
-            {
-                font: 'sans-serif',
-                fontSize: 12,
-                fontColor: '#0f172a',
-                backgroundColor: '#ecfeff',
-                backgroundOpacity: 0.9,
-                borderColor: '#0891b2',
-                borderThickness: 1.0,
-                inFront: true,
-                showBackground: true,
-                alignment: 'topLeft'
-            },
+            buildResidueLabelStyle(labelData.colorHex || '#0891b2'),
             createResidueSelection(labelData.residue, labelData.authChain)
         );
     });
@@ -239,62 +244,43 @@ function addManualResidueLabels() {
 
 function addMeasurementOverlay() {
     appState.measurementPairs.forEach((pair) => {
-        const firstAtom = getResidueAnchorAtom(pair.a.residue, pair.a.authChain);
-        const secondAtom = getResidueAnchorAtom(pair.b.residue, pair.b.authChain);
+        if (!pair.centerA) pair.centerA = getResidueBoundingCenter(pair.a.residue, pair.a.authChain);
+        if (!pair.centerB) pair.centerB = getResidueBoundingCenter(pair.b.residue, pair.b.authChain);
+
+        const firstCenter = pair.centerA;
+        const secondCenter = pair.centerB;
 
         // Keep the card visible even when distance cannot be resolved in the current frame.
-        if (!firstAtom || !secondAtom) {
+        if (!firstCenter || !secondCenter) {
             pair.distanceAngstrom = null;
             return;
         }
 
-        const dx = secondAtom.x - firstAtom.x;
-        const dy = secondAtom.y - firstAtom.y;
-        const dz = secondAtom.z - firstAtom.z;
+        const dx = secondCenter.x - firstCenter.x;
+        const dy = secondCenter.y - firstCenter.y;
+        const dz = secondCenter.z - firstCenter.z;
         const distance = Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
         pair.distanceAngstrom = distance;
 
         appState.viewer3Dmol.addLine({
-            start: firstAtom,
-            end: secondAtom,
+            start: firstCenter,
+            end: secondCenter,
             color: '#0f172a',
             dashed: true,
-            dashLength: 0.35,
-            gapLength: 0.2,
+            dashLength: 0.7,
+            gapLength: 0.3,
             linewidth: 4
         });
 
         appState.viewer3Dmol.addLabel(
             `${pair.a.display} ${pair.a.residue}`,
-            {
-                font: 'sans-serif',
-                fontSize: 11,
-                fontColor: '#111827',
-                backgroundColor: '#ffffff',
-                backgroundOpacity: 0.95,
-                borderColor: pair.a.colorHex,
-                borderThickness: 1.2,
-                inFront: true,
-                showBackground: true,
-                alignment: 'topLeft'
-            },
+            buildResidueLabelStyle(pair.a.colorHex, pair.a.colorHex),
             createResidueSelection(pair.a.residue, pair.a.authChain)
         );
 
         appState.viewer3Dmol.addLabel(
             `${pair.b.display} ${pair.b.residue}`,
-            {
-                font: 'sans-serif',
-                fontSize: 11,
-                fontColor: '#111827',
-                backgroundColor: '#ffffff',
-                backgroundOpacity: 0.95,
-                borderColor: pair.b.colorHex,
-                borderThickness: 1.2,
-                inFront: true,
-                showBackground: true,
-                alignment: 'topLeft'
-            },
+            buildResidueLabelStyle(pair.b.colorHex, pair.b.colorHex),
             createResidueSelection(pair.b.residue, pair.b.authChain)
         );
 
@@ -311,9 +297,9 @@ function addMeasurementOverlay() {
                 inFront: true,
                 showBackground: true,
                 position: {
-                    x: (firstAtom.x + secondAtom.x) / 2,
-                    y: (firstAtom.y + secondAtom.y) / 2,
-                    z: (firstAtom.z + secondAtom.z) / 2
+                    x: (firstCenter.x + secondCenter.x) / 2,
+                    y: (firstCenter.y + secondCenter.y) / 2,
+                    z: (firstCenter.z + secondCenter.z) / 2
                 }
             }
         );
@@ -333,6 +319,7 @@ export function toggleManualResidueLabel(mod) {
         appState.manualLabels.set(key, {
             residue,
             authChain: mod._authChain,
+            colorHex: mod._palette.hex,
             text: `${mod._displayMod} ${residue}`
         });
     }
@@ -399,6 +386,8 @@ export function unlinkMeasurementPair(pairId) {
 
 export function clearAllMeasurementPairs() {
     appState.measurementPairs = [];
+    appState.measurementDraft.first = null;
+    appState.measurementDraft.second = null;
     updateCurrentEngineStyles();
 }
 
@@ -411,6 +400,7 @@ function apply3DmolStyles() {
 
     appState.viewer3Dmol.setStyle({}, {});
     appState.viewer3Dmol.removeAllLabels();
+    appState.viewer3Dmol.removeAllShapes();
 
     if (showProteins) {
         appState.viewer3Dmol.setStyle({}, {
@@ -463,16 +453,10 @@ function apply3DmolStyles() {
             appState.viewer3Dmol.addLabel(
                 labelText,
                 {
-                    font: 'sans-serif',
+                    ...buildResidueLabelStyle(mod._palette.hex),
                     fontSize: 14,
-                    fontColor: '#111827',
-                    backgroundColor: '#ffffff',
                     backgroundOpacity: 0.85,
-                    borderColor: mod._palette.hex,
-                    borderThickness: 1.5,
-                    inFront: true,
-                    showBackground: true,
-                    alignment: 'topLeft'
+                    borderThickness: 1.5
                 },
                 { chain: mod._authChain, resi: residue.toString() }
             );

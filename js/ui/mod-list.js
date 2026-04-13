@@ -80,6 +80,10 @@ function createLinkedPairNode(pair) {
         : 'Pending distance';
 
     item.innerHTML = `
+        <div
+            class="pair-split-bar"
+            style="--pair-color-a:${pair.a.colorHex}; --pair-color-b:${pair.b.colorHex}"
+        ></div>
         <div class="pair-half pair-half-a" style="--pair-color:${pair.a.colorHex}">
             <span class="pair-resi">${pair.a.residue}</span>
             <span class="pair-chain">${pair.a.type}</span>

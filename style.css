@@ -267,48 +267,6 @@ input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 #searchInput:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
 #filterType { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 4px 6px; font-family: var(--sans); font-size: 10px; font-weight: 500; cursor: pointer; }
 
-/* ── MEASUREMENT SUMMARY ── */
-.measure-panel {
-    display: none;
-    flex-direction: column;
-    gap: 4px;
-    border-bottom: 1px solid var(--border);
-    background: #ecfeff;
-    padding: 10px 12px;
-    flex-shrink: 0;
-}
-
-.measure-panel.active { display: flex; }
-
-.measure-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.measure-title {
-    font-family: var(--sans);
-    font-size: 10px;
-    font-weight: 700;
-    color: #0f766e;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.measure-status {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    color: #0f172a;
-}
-
-.measure-values {
-    font-family: var(--sans);
-    font-size: 10px;
-    color: #155e75;
-    line-height: 1.2;
-}
-
 /* ── MOD LIST (ULTRA COMPACT) ── */
 #modList {
     flex: 1; overflow-y: auto;
@@ -348,6 +306,123 @@ input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 #modList li.li-labeled { box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.35); }
 #modList li.li-measure-a { border-left-color: #0ea5e9 !important; background: #f0f9ff; }
 #modList li.li-measure-b { border-left-color: #14b8a6 !important; background: #f0fdfa; }
+#modList li.li-linked-target { box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.28); }
+
+#modList li.li-linked-pair {
+    grid-column: span 2;
+    border-left-width: 1px;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    grid-template-rows: 4px auto;
+    column-gap: 0;
+    row-gap: 0;
+    overflow: hidden;
+    min-height: 48px;
+    background: var(--surface);
+}
+
+#modList li.li-linked-pair:hover { border-color: #9fb5d3; background: var(--surface); }
+
+.pair-split-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    background: linear-gradient(
+        to right,
+        var(--pair-color-a) 0%,
+        var(--pair-color-a) 50%,
+        var(--pair-color-b) 50%,
+        var(--pair-color-b) 100%
+    );
+}
+
+.pair-half {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 6px;
+    row-gap: 1px;
+    align-items: center;
+    padding: 4px 6px;
+    grid-row: 2;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.pair-half-a { border-right: 1px solid var(--border2); }
+
+.pair-resi {
+    grid-column: 1;
+    grid-row: 1;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+}
+
+.pair-chain {
+    grid-column: 2;
+    grid-row: 1;
+    font-family: var(--sans);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-mute);
+    background: var(--surface3);
+    padding: 1px 4px;
+    border-radius: 2px;
+    justify-self: end;
+    line-height: 1;
+}
+
+.pair-mod {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    font-family: var(--sans);
+    font-size: 10px;
+    color: var(--text-dim);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    margin-top: 2px;
+}
+
+.pair-meta {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 4px 6px;
+    min-width: 82px;
+    background: #f8fafc;
+    border-left: 1px solid var(--border2);
+    grid-row: 2;
+}
+
+.pair-distance {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.unlink-pair-btn {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-dim);
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.unlink-pair-btn:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
 
 .li-resi { grid-column: 1; grid-row: 1; font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--text); line-height: 1; }
 .li-chain { grid-column: 2; grid-row: 1; font-family: var(--sans); font-size: 9px; font-weight: 600; color: var(--text-mute); background: var(--surface3); padding: 1px 4px; border-radius: 2px; justify-self: end; line-height: 1; }
