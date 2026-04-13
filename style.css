@@ -7,25 +7,30 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-    --bg:        #f3f4f6;
+    /* Sfondi accademici e puliti */
+    --bg:        #F4F6F9; 
     --surface:   #ffffff;
-    --surface2:  #f9fafb;
-    --surface3:  #e5e7eb;
+    --surface2:  #F8F9FA;
+    --surface3:  #E2E6ED; 
     --border:    #d1d5db;
     --border2:   #e5e7eb;
+    
+    /* Tipografia (NPG Dark Blue e NPG Grey-Blue) */
     --text:      #111827;
-    --text-dim:  #4b5563;
-    --text-mute: #6b7280;
-    --accent:    #2563eb;
-    --accent-hover:#1d4ed8;
-    --accent-bg: #eff6ff;
-    --danger:    #ef4444;
+    --text-dim:  #3C5488;   /* NPG Dark Blue per dare eleganza ai testi secondari */
+    --text-mute: #8491B4;   /* NPG Grey-Blue per etichette e testi muti */
+    
+    /* Palette UI NPG (Bottoni, Toggle, Slider, Hover) */
+    --accent:       #3C5488; /* NPG Dark Blue - Colore istituzionale principale */
+    --accent-hover: #4DBBD5; /* NPG Light Blue - Per gli stati di hover */
+    --accent-bg:    #4DBBD51A; /* NPG Light Blue trasparente per i background dei pulsanti */
+    --danger:       #E64B35; /* NPG Red - Per errori o residui assenti */
     
     --mono:      'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --sans:      system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --radius:    4px;
     --header-h:  52px;
-    --sidebar-w: 300px; /* Leggermente più stretta per recuperare spazio per il viewer */
+    --sidebar-w: 300px;
 }
 
 html, body {
@@ -143,11 +148,166 @@ input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 .sidebar-header h2 { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--text); }
 .residue-count { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-bg); padding: 2px 6px; border-radius: 10px; }
 
+/* ── TOOL PANEL ── */
+.sidebar-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    flex-shrink: 0;
+}
+
+.tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.tool-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
+}
+
+.tool-select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 8px;
+    min-width: 120px;
+    font-size: 10px;
+}
+
+.mode-row { align-items: flex-start; }
+
+.mode-switch {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+}
+
+.mode-btn {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.mode-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.mode-btn.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.tool-info {
+    justify-content: flex-start;
+    font-family: var(--sans);
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.3;
+}
+
+.labels-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.label-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.btn-soft {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-dim);
+    padding: 3px 7px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-soft:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-bg);
+}
+
 /* ── SEARCH / FILTER ── */
 .sidebar-search { padding: 10px 12px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 #searchInput { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--sans); font-size: 11px; padding: 4px 8px; outline: none; transition: all 0.15s; }
 #searchInput:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
 #filterType { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 4px 6px; font-family: var(--sans); font-size: 10px; font-weight: 500; cursor: pointer; }
+
+/* ── MEASUREMENT SUMMARY ── */
+.measure-panel {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    background: #ecfeff;
+    padding: 10px 12px;
+    flex-shrink: 0;
+}
+
+.measure-panel.active { display: flex; }
+
+.measure-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.measure-title {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    color: #0f766e;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.measure-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.measure-values {
+    font-family: var(--sans);
+    font-size: 10px;
+    color: #155e75;
+    line-height: 1.2;
+}
 
 /* ── MOD LIST (ULTRA COMPACT) ── */
 #modList {
@@ -185,6 +345,9 @@ input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 
 #modList li:hover { border-color: #b0b8c4; background: var(--surface2); }
 #modList li.selected { background: var(--accent-bg); border-color: var(--accent); border-left-color: var(--accent) !important; }
+#modList li.li-labeled { box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.35); }
+#modList li.li-measure-a { border-left-color: #0ea5e9 !important; background: #f0f9ff; }
+#modList li.li-measure-b { border-left-color: #14b8a6 !important; background: #f0fdfa; }
 
 .li-resi { grid-column: 1; grid-row: 1; font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--text); line-height: 1; }
 .li-chain { grid-column: 2; grid-row: 1; font-family: var(--sans); font-size: 9px; font-weight: 600; color: var(--text-mute); background: var(--surface3); padding: 1px 4px; border-radius: 2px; justify-self: end; line-height: 1; }

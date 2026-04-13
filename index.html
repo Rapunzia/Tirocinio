@@ -50,8 +50,8 @@
         <div class="ctrl-pill" id="ui-opacity">
             <span class="ctrl-label">Opacity</span>
             <div class="slider-wrap">
-                <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.3">
-                <span id="opacityVal">0.3</span>
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.85">
+                <span id="opacityVal">0.85</span>
             </div>
         </div>
 
@@ -136,6 +136,37 @@
             <span class="residue-count" id="residueCount">—</span>
         </div>
 
+        <div class="sidebar-tools">
+            <div class="tool-row">
+                <span class="tool-label">Sort</span>
+                <select id="sortMode" class="tool-select">
+                    <option value="resi-asc">Residue ↑</option>
+                    <option value="resi-desc">Residue ↓</option>
+                    <option value="chain-asc">Structure Type</option>
+                    <option value="mod-first">Known Mods First</option>
+                </select>
+            </div>
+
+            <div class="tool-row mode-row">
+                <span class="tool-label">Mode</span>
+                <div class="mode-switch" role="group" aria-label="Interaction Mode">
+                    <button id="modeNavigateBtn" class="mode-btn" type="button">Navigate</button>
+                    <button id="modeLabelBtn" class="mode-btn" type="button">Edit Labels</button>
+                    <button id="modeMeasureBtn" class="mode-btn" type="button">Measure</button>
+                </div>
+            </div>
+
+            <div class="tool-row tool-info" id="modeHint">Navigate mode: click a residue to focus it in the active viewer.</div>
+
+            <div class="tool-row labels-row">
+                <span class="tool-label">Manual Labels</span>
+                <div class="labels-actions">
+                    <span class="label-count-badge" id="labelCount">0</span>
+                    <button id="clearLabelsBtn" class="btn-soft" type="button">Clear</button>
+                </div>
+            </div>
+        </div>
+
         <div class="sidebar-search">
             <input type="text" id="searchInput" placeholder="Search residue, mod…" autocomplete="off">
             <select id="filterType">
@@ -154,6 +185,6 @@
     </aside>
 </div>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
