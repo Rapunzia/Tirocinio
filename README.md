@@ -1,57 +1,54 @@
-# 🧬 Modifications Map - 3D rRNA Viewer Benchmark
+# Modifications Map
 
-**Modifications Map** is an interactive, high-performance web platform designed for the 3D visualization and analysis of post-transcriptional modifications on ribosomal RNA (rRNA). 
+Modifications Map is the frontend prototype of a thesis project focused on molecular visualization for RNA-related research workflows.
 
-The tool also serves as a **benchmarking** environment, allowing real-time comparison of performance and graphical rendering across the four main WebGL-based molecular rendering engines: **3Dmol.js**, **Mol\***, **JSmol**, and **NGL Viewer**.
+The long-term goal is to provide a web application where researchers upload a FASTA sequence, a backend service processes and annotates that sequence, and the frontend viewer presents an interactive structural visualization with fast, publication-ready snapshot export.
 
----
+At this stage, this repository covers the visualization layer only.
 
-## ✨ Main Features
+## Project Scope
 
-* **Multi-Engine Rendering:** Instantly switch between 3Dmol.js, Mol*, JSmol, and NGL Viewer while maintaining the same structural context and applied data.
-* **Intelligent Structural Coloring:** Automatic recognition and coloring of rRNA backbones (e.g., 28S in dark grey, 18S in light grey, 5.8S in yellow, 5S in blue, tRNA in green).
-* **Dynamic Modifications Parsing:** Custom algorithm capable of interpreting complex modification lists (e.g., `m6A`, `Am`, `Psi`, `acp3U`) and categorizing them biochemically into domains (Base, Ribose, Isomerization, Complex).
-* **Colorblind-Safe Palette:** Uses a vibrant, high-contrast palette (inspired by Okabe-Ito) optimized for readability on 3D models and fully accessible to users with color vision deficiencies.
-* **Modern UI:** Floating and collapsible legend, interactive sidebar to center the camera on specific residues (with dynamic sphere highlighting), and automatic scientific typographic formatting (e.g., m^6A correctly rendered with real superscripts).
-* **Ultra-High Performance:** * **Graphics Batching:** WebGL engine calls are minimized by grouping residues by color, allowing the simultaneous visualization of thousands of spheres at a solid 60 FPS without camera rotation lag.
-    * **Asynchronous Debouncing:** Global opacity calculation leverages `requestAnimationFrame` to ensure smooth transitions without event flooding during slider drag.
+In scope (this repository):
+- Interactive molecular viewer UI.
+- Structural rendering and residue highlighting.
+- Visualization controls (filters, labeling, measurement, opacity, engine switching).
+- Snapshot/export workflows for figure preparation.
 
----
+Out of scope (external/backend work):
+- FASTA parsing and biological sequence processing.
+- Annotation pipelines and prediction logic.
+- Storage, authentication, and data services.
 
-## 🛠 Technologies Used
+## Current Capabilities
 
-The application is built entirely in **Vanilla JavaScript**, HTML5, and CSS3, ensuring maximum lightness and zero build dependencies (no npm, webpack, or JS frameworks required).
+- Multi-engine rendering benchmark and comparison:
+  - 3Dmol.js
+  - Mol*
+  - JSmol
+  - NGL Viewer
+- Residue list with search, filtering, sorting, and interaction modes.
+- Manual labels and residue-to-residue distance linking (3Dmol-focused interaction features).
+- Configurable coloring for structural chains and modification domains.
+- Fast UI interactions with reduced redraw overhead for smoother exploration.
+- Snapshot support designed for paper-ready figures.
 
-**Integrated Molecular Libraries:**
-* [`3Dmol.js`](https://3dmol.csb.pitt.edu/) (v2.0.4)
-* [`PDBe Mol*`](https://molstar.org/) (v3.2.0)
-* [`JSmol`](http://jmol.sourceforge.net/) (HTML5 version)
-* [`NGL Viewer`](http://nglviewer.org/) (v2.3.0)
+## Target Workflow (Thesis Direction)
 
----
+1. Researcher uploads FASTA input.
+2. Backend processes sequence and produces annotated output.
+3. Frontend loads structural and annotation data.
+4. Researcher explores, compares, measures, labels, and exports publication-quality views.
 
-## 🎨 Color Logic and Biochemical Domains
+This repository currently implements steps 3 and 4.
 
-The engine assigns colors not to the single textual annotation, but to the **biochemical impact** of the modification. It properly handles hyper-variable sites (multiple possible modifications on the same residue):
+## Input Data (Current Prototype)
 
-| Domain | Description | UI Color | Examples |
-| :--- | :--- | :--- | :--- |
-| **Domain I** | Isomerization | Neon Green | `Ψ`, `Psi`, `Y` |
-| **Domain R** | Sugar (2'-O) Methylation | Electric Blue | `Am`, `Cm`, `Gm`, `Um` |
-| **Domain B** | Base Methylation | Bright Red | `m6A`, `m5C`, `m7G`, `m22G` |
-| **Mix B+R** | Base + Ribose | Fuchsia / Purple | `m5Cm`, array: `["m6A", "Am"]` |
-| **Mix I+R** | Isomerization + Ribose | Cyan | `Ψm`, array: `["Psi", "Um"]` |
-| **Complex** | Mod. with high steric hindrance | Orange | `ac4C`, `acp3U`, `D` |
-| **Hyper-Variable**| Intersection of 3+ domains | Pure Black | Array: `["m1A", "acp3U", "Psi"]` |
-| **Unknown** | Missing or uncertain data | Yellow | `unknown`, `?`, `none` |
+The app currently uses:
+- A structure file (example: `4v6x.cif`).
+- A JSON file describing residue-level modifications.
 
----
+Example JSON entry format:
 
-## 📥 Data Format (JSON Input)
-
-The application accepts JSON files structured as an array of objects. Each object must describe a single residue. The `Possible Modifications` field accepts single strings, comma-separated strings, or arrays.
-
-**Example of a valid JSON:**
 ```json
 [
   {
@@ -65,11 +62,40 @@ The application accepts JSON files structured as an array of objects. Each objec
     "Type Structure": "28S",
     "Knwon Positions Modifications": "Y",
     "Possible Modifications": ["m5C", "Cm"]
-  },
-  {
-    "Positions in the Structure": 110,
-    "Type Structure": "5S",
-    "Knwon Positions Modifications": "N",
-    "Possible Modifications": "unknown"
   }
 ]
+```
+
+## Tech Stack
+
+- Vanilla JavaScript (ES modules)
+- HTML5
+- CSS3
+- 3Dmol.js
+- PDBe Mol*
+- JSmol
+- NGL Viewer
+
+No build system is required for the current prototype.
+
+## Running Locally
+
+Because browsers block some local file fetch operations, run the project through a local static server.
+
+Example:
+
+```bash
+python -m http.server 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
+## Notes for Collaborators
+
+- The codebase is modularized by concern (`data`, `ui`, `viewers`, `state`, bootstrap wiring).
+- Backend integration points are intentionally separated from visualization logic to support future FASTA pipeline integration.
+- The current priority is frontend reliability, performance, and reproducible figure generation for research outputs.
