@@ -28,6 +28,10 @@ import {
     updateCurrentEngineStyles
 } from './viewers/engine-manager.js';
 
+let opacityUpdateTimerId = null;
+let pendingFocusRequest = null;
+let focusRequestFrameId = null;
+
 // Entry point for wiring UI events and cross-module interactions.
 export function initializeApp() {
     initModListSelectionHandler(handleResidueListSelection);
@@ -39,6 +43,7 @@ export function initializeApp() {
     bindOpacitySlider();
     bindFilterControls();
     bindInteractionTools();
+    bindSidebarToggle();
     bindLegendControls();
     bindViewerToggles();
     bindSnapshotExport();
@@ -46,6 +51,20 @@ export function initializeApp() {
     syncEnginePanels();
     syncOpacityControlVisibility();
     setInteractionMode('navigate');
+}
+
+function scheduleResidueFocus(mod) {
+    pendingFocusRequest = mod;
+    if (focusRequestFrameId) return;
+
+    focusRequestFrameId = requestAnimationFrame(() => {
+        focusRequestFrameId = null;
+        const next = pendingFocusRequest;
+        pendingFocusRequest = null;
+        if (!next) return;
+
+        centerOnResidue(next['Positions in the Structure'], next._authChain, next._structId);
+    });
 }
 
 function handleResidueListSelection(mod) {
@@ -78,7 +97,7 @@ function handleResidueListSelection(mod) {
         return;
     }
 
-    centerOnResidue(mod['Positions in the Structure'], mod._authChain, mod._structId);
+    scheduleResidueFocus(mod);
 }
 
 function handlePairUnlink(pairId) {
@@ -168,14 +187,27 @@ function bindJsonLoader() {
 }
 
 function bindOpacitySlider() {
-    document.getElementById('opacitySlider').addEventListener('input', function onOpacityInput() {
+    const slider = document.getElementById('opacitySlider');
+    const commitOpacityUpdate = () => {
+        if (opacityUpdateTimerId) return;
+        opacityUpdateTimerId = setTimeout(() => {
+            opacityUpdateTimerId = null;
+            updateCurrentEngineStyles();
+        }, 75);
+    };
+
+    slider.addEventListener('input', function onOpacityInput() {
         appState.currentOpacity = parseFloat(this.value);
         document.getElementById('opacityVal').textContent = appState.currentOpacity.toFixed(2);
+        commitOpacityUpdate();
+    });
 
-        if (appState.opacityAnimationFrame) cancelAnimationFrame(appState.opacityAnimationFrame);
-
-        appState.opacityAnimationFrame = requestAnimationFrame(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 0));
+    slider.addEventListener('change', () => {
+        if (opacityUpdateTimerId) {
+            clearTimeout(opacityUpdateTimerId);
+            opacityUpdateTimerId = null;
+        }
+        requestAnimationFrame(() => {
             updateCurrentEngineStyles();
         });
     });
@@ -226,6 +258,19 @@ function bindInteractionTools() {
         refreshInteractionMarkers();
         updateInteractionPanels();
         showToast('All manual residue labels removed.');
+    });
+}
+
+function bindSidebarToggle() {
+    const toggleButton = document.getElementById('sidebarToggleBtn');
+    const workspace = document.getElementById('workspaceLayout');
+    if (!toggleButton || !workspace) return;
+
+    toggleButton.addEventListener('click', () => {
+        const collapsed = workspace.classList.toggle('sidebar-collapsed');
+        toggleButton.textContent = collapsed ? 'PANEL ▶' : 'PANEL ◀';
+        toggleButton.setAttribute('aria-expanded', String(!collapsed));
+        toggleButton.title = collapsed ? 'Expand right panel' : 'Collapse right panel';
     });
 }
 

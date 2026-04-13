@@ -20,7 +20,6 @@ export const appState = {
     sortMode: 'resi-asc',
     interactionMode: 'navigate',
     filterDebounceId: null,
-    opacityAnimationFrame: null,
 
     manualLabels: new Map(),
     measurementDraft: {

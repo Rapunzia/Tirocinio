@@ -5,6 +5,8 @@ import { setLoading, finishProgress } from '../ui/loading.js';
 import { showToast } from '../ui/toast.js';
 
 let nglColorSchemeCounter = 0;
+let focusPulseShape3Dmol = null;
+let focusPulseTimer3Dmol = null;
 
 // Releases WebGL and DOM resources used by one engine instance.
 export function destroyEngine(engineName) {
@@ -374,17 +376,24 @@ export function selectResidueForMeasurement(mod) {
 }
 
 export function clearMeasurementSelection() {
+    const hadDraft = Boolean(appState.measurementDraft.first || appState.measurementDraft.second);
+    if (!hadDraft) return;
+
     appState.measurementDraft.first = null;
     appState.measurementDraft.second = null;
     updateCurrentEngineStyles();
 }
 
 export function unlinkMeasurementPair(pairId) {
+    const previousLength = appState.measurementPairs.length;
     appState.measurementPairs = appState.measurementPairs.filter((pair) => pair.id !== pairId);
+    if (appState.measurementPairs.length === previousLength) return;
     updateCurrentEngineStyles();
 }
 
 export function clearAllMeasurementPairs() {
+    if (appState.measurementPairs.length === 0 && !appState.measurementDraft.first && !appState.measurementDraft.second) return;
+
     appState.measurementPairs = [];
     appState.measurementDraft.first = null;
     appState.measurementDraft.second = null;
@@ -598,13 +607,38 @@ function applyNglStyles() {
 export function centerOnResidue(resi, authChain, structId) {
     if (appState.currentEngine === '3dmol' && appState.viewer3Dmol) {
         const selection = { chain: authChain, resi: resi.toString() };
-        appState.viewer3Dmol.zoomTo(selection, 1000);
-        appState.viewer3Dmol.setStyle(selection, {
-            cartoon: { color: '#ffe066' },
-            sphere: { radius: 1.8, color: '#ffe066' }
-        });
+        const center = getResidueBoundingCenter(resi, authChain);
+
+        appState.viewer3Dmol.zoomTo(selection, 750);
+
+        if (focusPulseTimer3Dmol) {
+            clearTimeout(focusPulseTimer3Dmol);
+            focusPulseTimer3Dmol = null;
+        }
+
+        if (focusPulseShape3Dmol) {
+            appState.viewer3Dmol.removeShape(focusPulseShape3Dmol);
+            focusPulseShape3Dmol = null;
+        }
+
+        if (center) {
+            focusPulseShape3Dmol = appState.viewer3Dmol.addSphere({
+                center,
+                radius: 2.2,
+                color: '#ffe066',
+                opacity: 0.42,
+                wireframe: false
+            });
+
+            focusPulseTimer3Dmol = setTimeout(() => {
+                if (!appState.viewer3Dmol || !focusPulseShape3Dmol) return;
+                appState.viewer3Dmol.removeShape(focusPulseShape3Dmol);
+                focusPulseShape3Dmol = null;
+                appState.viewer3Dmol.render();
+            }, 950);
+        }
+
         appState.viewer3Dmol.render();
-        setTimeout(() => apply3DmolStyles(), 1600);
         return;
     }
 

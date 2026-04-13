@@ -12,6 +12,15 @@ function getMeasurementKey(slot) {
     return `${slot.residue}|${slot.authChain}`;
 }
 
+function buildLinkedResidueKeySet() {
+    const linkedKeys = new Set();
+    appState.measurementPairs.forEach((pair) => {
+        linkedKeys.add(`${pair.a.residue}|${pair.a.authChain}`);
+        linkedKeys.add(`${pair.b.residue}|${pair.b.authChain}`);
+    });
+    return linkedKeys;
+}
+
 function getResidueNumber(mod) {
     const raw = mod['Positions in the Structure'];
     const numeric = Number(raw);
@@ -52,17 +61,14 @@ function getSortedModifications() {
     return sorted;
 }
 
-function applyInteractionMarkersForItem(mod) {
+function applyInteractionMarkersForItem(mod, context = null) {
     if (!mod._domNode) return;
 
     const residueKey = getResidueKey(mod);
-    const measureAKey = getMeasurementKey(appState.measurementDraft.first);
-    const measureBKey = getMeasurementKey(appState.measurementDraft.second);
-    const isLinkedTarget = appState.measurementPairs.some((pair) => {
-        const keyA = `${pair.a.residue}|${pair.a.authChain}`;
-        const keyB = `${pair.b.residue}|${pair.b.authChain}`;
-        return residueKey === keyA || residueKey === keyB;
-    });
+    const measureAKey = context?.measureAKey ?? getMeasurementKey(appState.measurementDraft.first);
+    const measureBKey = context?.measureBKey ?? getMeasurementKey(appState.measurementDraft.second);
+    const linkedResidueKeys = context?.linkedResidueKeys ?? buildLinkedResidueKeySet();
+    const isLinkedTarget = linkedResidueKeys.has(residueKey);
 
     mod._domNode.classList.toggle('li-labeled', appState.manualLabels.has(residueKey));
     mod._domNode.classList.toggle('li-measure-a', residueKey === measureAKey);
@@ -104,7 +110,13 @@ function createLinkedPairNode(pair) {
 }
 
 export function refreshInteractionMarkers() {
-    appState.modifications.forEach((mod) => applyInteractionMarkersForItem(mod));
+    const context = {
+        measureAKey: getMeasurementKey(appState.measurementDraft.first),
+        measureBKey: getMeasurementKey(appState.measurementDraft.second),
+        linkedResidueKeys: buildLinkedResidueKeySet()
+    };
+
+    appState.modifications.forEach((mod) => applyInteractionMarkersForItem(mod, context));
 }
 
 // Registers one delegated click handler for residue cards.
@@ -216,7 +228,6 @@ export function applyFilters() {
         emptyMessage.style.display = 'none';
     }
 
-    refreshInteractionMarkers();
 }
 
 export function setFilterQuery(query) {

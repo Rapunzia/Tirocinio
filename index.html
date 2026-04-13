@@ -99,7 +99,7 @@
     </div>
 </div>
 
-<div class="workspace">
+<div class="workspace" id="workspaceLayout">
 
     <div id="viewer-container">
 
@@ -133,7 +133,9 @@
     <aside class="sidebar">
         <div class="sidebar-header">
             <h2>Modified Residues</h2>
-            <span class="residue-count" id="residueCount">—</span>
+            <div class="sidebar-header-actions">
+                <span class="residue-count" id="residueCount">—</span>
+            </div>
         </div>
 
         <div class="sidebar-tools">
@@ -183,6 +185,8 @@
             <li class="empty-msg">Load files to see residues…</li>
         </ul>
     </aside>
+
+    <button id="sidebarToggleBtn" class="sidebar-dock-btn" type="button" aria-expanded="true" title="Collapse right panel">PANEL ◀</button>
 </div>
 
 <script type="module" src="app.js"></script>
