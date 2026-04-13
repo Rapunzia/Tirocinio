@@ -54,13 +54,13 @@ Example JSON entry format:
   {
     "Positions in the Structure": 119,
     "Type Structure": "28S",
-    "Knwon Positions Modifications": "Y",
+    "Known Positions Modifications": "Y",
     "Possible Modifications": "mC"
   },
   {
     "Positions in the Structure": 2250,
     "Type Structure": "28S",
-    "Knwon Positions Modifications": "Y",
+    "Known Positions Modifications": "Y",
     "Possible Modifications": ["m5C", "Cm"]
   }
 ]
