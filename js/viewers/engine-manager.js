@@ -8,6 +8,10 @@ let nglColorSchemeCounter = 0;
 let focusPulseShape3Dmol = null;
 let focusPulseTimer3Dmol = null;
 
+const EXPORT_WIDTH_3DMOL = 3840;
+const EXPORT_HEIGHT_3DMOL = 2160;
+const BASE_LABEL_FONT_SIZE = 11;
+
 // Releases WebGL and DOM resources used by one engine instance.
 export function destroyEngine(engineName) {
     try {
@@ -219,32 +223,46 @@ function getResidueBoundingCenter(residue, authChain) {
     return { x: extent[2][0], y: extent[2][1], z: extent[2][2] };
 }
 
-function buildResidueLabelStyle(colorHex, fontColor = '#111827') {
+function normalizeLabelScale(scale) {
+    const numericScale = Number.isFinite(scale) ? scale : 1;
+    return Math.min(3, Math.max(1, numericScale));
+}
+
+function buildResidueLabelStyle(colorHex, options = {}) {
+    const {
+        fontColor = '#111827',
+        scale = 1,
+        ...styleOverrides
+    } = options;
+
+    const safeScale = normalizeLabelScale(scale);
+
     return {
         font: 'sans-serif',
-        fontSize: 11,
+        fontSize: Math.round(BASE_LABEL_FONT_SIZE * safeScale),
         fontColor,
         backgroundColor: '#ffffff',
         backgroundOpacity: 0.95,
         borderColor: colorHex,
-        borderThickness: 1.2,
+        borderThickness: Number((1.2 * Math.min(safeScale, 2)).toFixed(2)),
         inFront: true,
         showBackground: true,
-        alignment: 'topLeft'
+        alignment: 'topLeft',
+        ...styleOverrides
     };
 }
 
-function addManualResidueLabels() {
+function addManualResidueLabels(labelScale = 1) {
     appState.manualLabels.forEach((labelData) => {
         appState.viewer3Dmol.addLabel(
             labelData.text,
-            buildResidueLabelStyle(labelData.colorHex || '#0891b2'),
+            buildResidueLabelStyle(labelData.colorHex || '#0891b2', { scale: labelScale }),
             createResidueSelection(labelData.residue, labelData.authChain)
         );
     });
 }
 
-function addMeasurementOverlay() {
+function addMeasurementOverlay(labelScale = 1) {
     appState.measurementPairs.forEach((pair) => {
         if (!pair.centerA) pair.centerA = getResidueBoundingCenter(pair.a.residue, pair.a.authChain);
         if (!pair.centerB) pair.centerB = getResidueBoundingCenter(pair.b.residue, pair.b.authChain);
@@ -276,34 +294,27 @@ function addMeasurementOverlay() {
 
         appState.viewer3Dmol.addLabel(
             `${pair.a.display} ${pair.a.residue}`,
-            buildResidueLabelStyle(pair.a.colorHex, pair.a.colorHex),
+            buildResidueLabelStyle(pair.a.colorHex, { scale: labelScale }),
             createResidueSelection(pair.a.residue, pair.a.authChain)
         );
 
         appState.viewer3Dmol.addLabel(
             `${pair.b.display} ${pair.b.residue}`,
-            buildResidueLabelStyle(pair.b.colorHex, pair.b.colorHex),
+            buildResidueLabelStyle(pair.b.colorHex, { scale: labelScale }),
             createResidueSelection(pair.b.residue, pair.b.authChain)
         );
 
         appState.viewer3Dmol.addLabel(
             `${distance.toFixed(2)} A`,
-            {
-                font: 'sans-serif',
-                fontSize: 12,
-                fontColor: '#0f172a',
-                backgroundColor: '#ffffff',
-                backgroundOpacity: 0.95,
-                borderColor: '#0f172a',
-                borderThickness: 0.8,
-                inFront: true,
-                showBackground: true,
+            buildResidueLabelStyle('#0f172a', {
+                scale: labelScale,
+                alignment: 'center',
                 position: {
                     x: (firstCenter.x + secondCenter.x) / 2,
                     y: (firstCenter.y + secondCenter.y) / 2,
                     z: (firstCenter.z + secondCenter.z) / 2
                 }
-            }
+            })
         );
     });
 }
@@ -400,12 +411,13 @@ export function clearAllMeasurementPairs() {
     updateCurrentEngineStyles();
 }
 
-function apply3DmolStyles() {
+function apply3DmolStyles(options = {}) {
     if (!appState.viewer3Dmol) return;
 
     const config = rnaConfig[appState.currentRibo];
     const showProteins = document.getElementById('toggleProteins').checked;
     const showLabels = document.getElementById('toggleLabels').checked;
+    const labelScale = normalizeLabelScale(options.labelScale);
 
     appState.viewer3Dmol.setStyle({}, {});
     appState.viewer3Dmol.removeAllLabels();
@@ -461,20 +473,15 @@ function apply3DmolStyles() {
 
             appState.viewer3Dmol.addLabel(
                 labelText,
-                {
-                    ...buildResidueLabelStyle(mod._palette.hex),
-                    fontSize: 14,
-                    backgroundOpacity: 0.85,
-                    borderThickness: 1.5
-                },
+                buildResidueLabelStyle(mod._palette.hex, { scale: labelScale }),
                 { chain: mod._authChain, resi: residue.toString() }
             );
         });
     }
 
     // Always draw user-managed overlays after base/global labels.
-    addManualResidueLabels();
-    addMeasurementOverlay();
+    addManualResidueLabels(labelScale);
+    addMeasurementOverlay(labelScale);
 
     appState.viewer3Dmol.render();
 }
@@ -678,6 +685,15 @@ export function centerOnResidue(resi, authChain, structId) {
     }
 }
 
+export function resetCameraView() {
+    if (appState.currentEngine !== '3dmol') return { ok: false, reason: 'engine' };
+    if (!appState.viewer3Dmol) return { ok: false, reason: 'viewer' };
+
+    appState.viewer3Dmol.zoomTo();
+    appState.viewer3Dmol.render();
+    return { ok: true, reason: 'ok' };
+}
+
 function downloadSnapshot(uri, filename) {
     const link = document.createElement('a');
     link.href = uri;
@@ -685,6 +701,14 @@ function downloadSnapshot(uri, filename) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+function compute3DmolExportLabelScale(viewportWidth, viewportHeight) {
+    const safeWidth = Math.max(1, viewportWidth || 1);
+    const safeHeight = Math.max(1, viewportHeight || 1);
+    const widthScale = EXPORT_WIDTH_3DMOL / safeWidth;
+    const heightScale = EXPORT_HEIGHT_3DMOL / safeHeight;
+    return normalizeLabelScale(Math.max(widthScale, heightScale));
 }
 
 // Exports a PNG snapshot, using each engine's best available strategy.
@@ -702,23 +726,34 @@ export function exportSnapshot() {
 
         if (appState.currentEngine === '3dmol' && appState.viewer3Dmol) {
             const container = document.getElementById('gldiv-3dmol');
+            if (!container) {
+                showToast('3Dmol container is not available.', true);
+                return;
+            }
+
             const originalWidth = container.style.width;
             const originalHeight = container.style.height;
+            const labelScale = compute3DmolExportLabelScale(container.clientWidth, container.clientHeight);
 
-            container.style.width = '3840px';
-            container.style.height = '2160px';
-            appState.viewer3Dmol.resize();
-            appState.viewer3Dmol.render();
+            try {
+                container.style.width = `${EXPORT_WIDTH_3DMOL}px`;
+                container.style.height = `${EXPORT_HEIGHT_3DMOL}px`;
+                appState.viewer3Dmol.resize();
+                apply3DmolStyles({ labelScale });
 
-            const imageData = appState.viewer3Dmol.pngURI();
+                const imageData = appState.viewer3Dmol.pngURI();
+                downloadSnapshot(imageData, filename);
+                showToast('4K snapshot (3Dmol) saved.');
+            } catch (error) {
+                console.error(error);
+                showToast('Error while rendering 3Dmol snapshot.', true);
+            } finally {
+                container.style.width = originalWidth;
+                container.style.height = originalHeight;
+                appState.viewer3Dmol.resize();
+                apply3DmolStyles();
+            }
 
-            container.style.width = originalWidth;
-            container.style.height = originalHeight;
-            appState.viewer3Dmol.resize();
-            appState.viewer3Dmol.render();
-
-            downloadSnapshot(imageData, filename);
-            showToast('4K snapshot (3Dmol) saved.');
             return;
         }
 

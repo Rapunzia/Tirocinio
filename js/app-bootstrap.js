@@ -21,6 +21,7 @@ import {
     centerOnResidue,
     destroyEngine,
     exportSnapshot,
+    resetCameraView,
     renderActiveEngine,
     selectResidueForMeasurement,
     toggleManualResidueLabel,
@@ -46,6 +47,7 @@ export function initializeApp() {
     bindSidebarToggle();
     bindLegendControls();
     bindViewerToggles();
+    bindCameraReset();
     bindSnapshotExport();
 
     syncEnginePanels();
@@ -299,6 +301,20 @@ function bindViewerToggles() {
             return;
         }
         updateCurrentEngineStyles();
+    });
+}
+
+function bindCameraReset() {
+    document.getElementById('resetCameraBtn').addEventListener('click', () => {
+        const result = resetCameraView();
+        if (!result.ok && result.reason === 'engine') {
+            showToast('Camera reset is currently supported only in 3Dmol.', true);
+            return;
+        }
+
+        if (!result.ok && result.reason === 'viewer') {
+            showToast('Load a structure before resetting the camera.', true);
+        }
     });
 }
 
