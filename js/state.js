@@ -14,6 +14,7 @@ export const appState = {
     nglComponent: null,
 
     residueCache: null,
+    residueCenterCache: null,
 
     filterQuery: '',
     filterType: 'all',

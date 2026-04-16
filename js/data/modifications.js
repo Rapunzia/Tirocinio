@@ -1,6 +1,10 @@
 import { modPalette, rnaConfig } from '../constants.js';
 import { appState } from '../state.js';
-import { residueExists } from './cif-cache.js';
+import { getResidueCenter, residueExists } from './cif-cache.js';
+
+const BACKGROUND_INIT_CHUNK_SIZE = 120;
+let backgroundInitToken = 0;
+let modificationsHydrationToken = 0;
 
 const SUPERSCRIPT_DIGITS = {
     '0': '\u2070',
@@ -14,6 +18,46 @@ const SUPERSCRIPT_DIGITS = {
     '8': '\u2078',
     '9': '\u2079'
 };
+
+function cloneCenter(center) {
+    if (!center) return null;
+    return { x: center.x, y: center.y, z: center.z };
+}
+
+function buildResidueKey(residueNumber, authChain) {
+    return `${residueNumber}|${authChain}`;
+}
+
+function ensureCenter(modification) {
+    if (modification._center) return modification._center;
+
+    const center = getResidueCenter(modification['Positions in the Structure'], modification._authChain);
+    if (center) modification._center = center;
+    return modification._center || null;
+}
+
+function buildLabelPayload(modification) {
+    return {
+        residue: modification['Positions in the Structure'],
+        authChain: modification._authChain,
+        colorHex: modification._palette.hex,
+        text: `${modification._displayMod} ${modification['Positions in the Structure']}`
+    };
+}
+
+function buildMeasurementSlot(modification) {
+    const center = ensureCenter(modification);
+
+    return {
+        residue: modification['Positions in the Structure'],
+        authChain: modification._authChain,
+        structId: modification._structId,
+        type: modification['Type Structure'],
+        display: modification._displayMod,
+        colorHex: modification._palette.hex,
+        center: cloneCenter(center)
+    };
+}
 
 // Assigns a palette class according to biochemical behavior inferred from raw labels.
 export function getModificationColor(rawModification, isKnownModification) {
@@ -110,12 +154,67 @@ export function hydrateModifications() {
         modification._authChain = config.chains[typeStructure] ? config.chains[typeStructure].auth : typeStructure;
         modification._structId = config.chains[typeStructure] ? config.chains[typeStructure].struct : typeStructure;
         modification._isResolved = residueExists(residueNumber, modification._authChain);
+        modification._center = getResidueCenter(residueNumber, modification._authChain);
         modification._palette = getModificationColor(modification['Possible Modifications'], isKnownModification);
         modification._displayMod = isKnownModification
             ? formatModificationText(modification['Possible Modifications'])
             : 'Unknown';
+        modification._residueKey = buildResidueKey(residueNumber, modification._authChain);
+        modification._labelPayload = buildLabelPayload(modification);
+        modification._measurementSlot = buildMeasurementSlot(modification);
 
         // Cached lowercase searchable text for fast client-side filtering.
         modification._searchStr = `${residueNumber} ${modification._displayMod} ${typeStructure}`.toLowerCase();
     });
+
+    modificationsHydrationToken += 1;
+}
+
+export function getModificationsHydrationToken() {
+    return modificationsHydrationToken;
+}
+
+// Completes slower derived fields in chunks so interactions are instant when activated later.
+export function warmupModificationDataInBackground(options = {}) {
+    const {
+        chunkSize = BACKGROUND_INIT_CHUNK_SIZE,
+        onComplete = null
+    } = options;
+
+    const mods = appState.modifications;
+    if (!Array.isArray(mods) || mods.length === 0) {
+        if (typeof onComplete === 'function') onComplete();
+        return;
+    }
+
+    const token = ++backgroundInitToken;
+    let index = 0;
+
+    const runChunk = () => {
+        if (token !== backgroundInitToken) return;
+
+        const endIndex = Math.min(index + chunkSize, mods.length);
+        for (; index < endIndex; index += 1) {
+            const mod = mods[index];
+            if (!mod) continue;
+
+            mod._residueKey = mod._residueKey || buildResidueKey(mod['Positions in the Structure'], mod._authChain);
+            mod._labelPayload = mod._labelPayload || buildLabelPayload(mod);
+
+            if (!mod._center) {
+                mod._center = getResidueCenter(mod['Positions in the Structure'], mod._authChain);
+            }
+
+            mod._measurementSlot = buildMeasurementSlot(mod);
+        }
+
+        if (index < mods.length) {
+            setTimeout(runChunk, 0);
+            return;
+        }
+
+        if (typeof onComplete === 'function') onComplete();
+    };
+
+    setTimeout(runChunk, 0);
 }

@@ -1,12 +1,28 @@
 import { appState } from '../state.js';
 import { rnaConfig } from '../constants.js';
 import { hexToRgb } from '../utils/color.js';
+import { getResidueCenter } from '../data/cif-cache.js';
+import { getModificationsHydrationToken } from '../data/modifications.js';
 import { setLoading, finishProgress } from '../ui/loading.js';
 import { showToast } from '../ui/toast.js';
 
 let nglColorSchemeCounter = 0;
 let focusPulseShape3Dmol = null;
 let focusPulseTimer3Dmol = null;
+let pendingStyleUpdateTimerId = null;
+let pendingStyleUpdateMode = 'full';
+
+let dynamicOverlayLabels3Dmol = [];
+let dynamicOverlayShapes3Dmol = [];
+let baseResidueLabels3Dmol = [];
+
+const styleGroupCacheByChainProperty = {
+    _authChain: { key: null, groups: [] },
+    _structId: { key: null, groups: [] }
+};
+
+const STYLE_UPDATE_MODE_FULL = 'full';
+const STYLE_UPDATE_MODE_OVERLAY = 'overlay';
 
 const EXPORT_WIDTH_3DMOL = 3840;
 const EXPORT_HEIGHT_3DMOL = 2160;
@@ -159,17 +175,73 @@ function renderNgl() {
         });
 }
 
-// Re-applies colors/representations for whichever engine is active.
-export function updateCurrentEngineStyles() {
-    if (appState.currentEngine === '3dmol') apply3DmolStyles();
+function applyCurrentEngineStylesNow(mode = STYLE_UPDATE_MODE_FULL) {
+    if (appState.currentEngine === '3dmol') {
+        if (mode === STYLE_UPDATE_MODE_OVERLAY) {
+            apply3DmolOverlayOnly();
+        } else {
+            apply3DmolStyles();
+        }
+    }
     if (appState.currentEngine === 'molstar') applyMolstarStyles();
     if (appState.currentEngine === 'jsmol') applyJSmolStyles();
     if (appState.currentEngine === 'ngl') applyNglStyles();
 }
 
+// Re-applies colors/representations for whichever engine is active.
+// By default this is deferred to the next frame to keep UI interactions snappy.
+export function updateCurrentEngineStyles(options = {}) {
+    const {
+        immediate = false,
+        mode = STYLE_UPDATE_MODE_FULL
+    } = options;
+
+    const requestedMode = mode === STYLE_UPDATE_MODE_OVERLAY
+        ? STYLE_UPDATE_MODE_OVERLAY
+        : STYLE_UPDATE_MODE_FULL;
+
+    if (immediate) {
+        if (pendingStyleUpdateTimerId) {
+            clearTimeout(pendingStyleUpdateTimerId);
+            pendingStyleUpdateTimerId = null;
+        }
+
+        pendingStyleUpdateMode = STYLE_UPDATE_MODE_FULL;
+        applyCurrentEngineStylesNow(requestedMode);
+        return;
+    }
+
+    if (pendingStyleUpdateTimerId) {
+        if (requestedMode === STYLE_UPDATE_MODE_FULL) {
+            pendingStyleUpdateMode = STYLE_UPDATE_MODE_FULL;
+        }
+        return;
+    }
+
+    pendingStyleUpdateMode = requestedMode;
+
+    // Run after current task so button/list visual feedback can paint first.
+    pendingStyleUpdateTimerId = setTimeout(() => {
+        const modeToApply = pendingStyleUpdateMode;
+        pendingStyleUpdateTimerId = null;
+        pendingStyleUpdateMode = STYLE_UPDATE_MODE_FULL;
+        applyCurrentEngineStylesNow(modeToApply);
+    }, 0);
+}
+
 // Groups residues by chain+color to reduce draw-call count in style passes.
 function buildStyleGroups(chainProperty) {
+    const cacheEntry = styleGroupCacheByChainProperty[chainProperty];
+    if (!cacheEntry) return [];
+
     const showUnknown = document.getElementById('toggleUnknown').checked;
+    const hydrationToken = getModificationsHydrationToken();
+    const cacheKey = `${hydrationToken}|${showUnknown ? '1' : '0'}`;
+
+    if (cacheEntry.key === cacheKey) {
+        return cacheEntry.groups;
+    }
+
     const groups = {};
 
     appState.modifications.forEach((mod) => {
@@ -194,33 +266,83 @@ function buildStyleGroups(chainProperty) {
         groups[key].resi.push(mod['Positions in the Structure']);
     });
 
-    return Object.values(groups);
+    cacheEntry.key = cacheKey;
+    cacheEntry.groups = Object.values(groups);
+    return cacheEntry.groups;
 }
 
 function buildResidueKey(residue, authChain) {
     return `${residue}|${authChain}`;
 }
 
+function cacheResidueCenter(residue, authChain, center) {
+    if (!center) return;
+    if (!appState.residueCenterCache) appState.residueCenterCache = new Map();
+    appState.residueCenterCache.set(buildResidueKey(residue, authChain), cloneCenter(center));
+}
+
 function createResidueSelection(residue, authChain) {
     return { chain: authChain, resi: residue.toString() };
 }
 
+function cloneCenter(center) {
+    if (!center) return null;
+    return { x: center.x, y: center.y, z: center.z };
+}
+
+function computeDistanceAngstrom(firstCenter, secondCenter) {
+    if (!firstCenter || !secondCenter) return null;
+    const dx = secondCenter.x - firstCenter.x;
+    const dy = secondCenter.y - firstCenter.y;
+    const dz = secondCenter.z - firstCenter.z;
+    return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+}
+
+function buildMeasurementSlotFromMod(mod) {
+    const residue = mod['Positions in the Structure'];
+    const authChain = mod._authChain;
+
+    if (!mod._center) {
+        const cachedCenter = getResidueCenter(residue, authChain);
+        if (cachedCenter) mod._center = cachedCenter;
+    }
+
+    return {
+        residue,
+        authChain,
+        structId: mod._structId,
+        type: mod['Type Structure'],
+        display: mod._displayMod,
+        colorHex: mod._palette.hex,
+        center: cloneCenter(mod._center)
+    };
+}
+
 function getResidueBoundingCenter(residue, authChain) {
+    const cachedCenter = getResidueCenter(residue, authChain);
+    if (cachedCenter) return cloneCenter(cachedCenter);
+
     if (!appState.viewer3Dmol) return null;
 
     const atoms = appState.viewer3Dmol.selectedAtoms(createResidueSelection(residue, authChain));
     if (!atoms || atoms.length === 0) return null;
 
     if (typeof $3Dmol === 'undefined' || typeof $3Dmol.getExtent !== 'function') {
-        return { x: atoms[0].x, y: atoms[0].y, z: atoms[0].z };
+        const fallbackCenter = cloneCenter({ x: atoms[0].x, y: atoms[0].y, z: atoms[0].z });
+        cacheResidueCenter(residue, authChain, fallbackCenter);
+        return fallbackCenter;
     }
 
     const extent = $3Dmol.getExtent(atoms);
     if (!Array.isArray(extent) || !Array.isArray(extent[2]) || extent[2].length !== 3) {
-        return { x: atoms[0].x, y: atoms[0].y, z: atoms[0].z };
+        const fallbackCenter = cloneCenter({ x: atoms[0].x, y: atoms[0].y, z: atoms[0].z });
+        cacheResidueCenter(residue, authChain, fallbackCenter);
+        return fallbackCenter;
     }
 
-    return { x: extent[2][0], y: extent[2][1], z: extent[2][2] };
+    const center = cloneCenter({ x: extent[2][0], y: extent[2][1], z: extent[2][2] });
+    cacheResidueCenter(residue, authChain, center);
+    return center;
 }
 
 function normalizeLabelScale(scale) {
@@ -253,16 +375,65 @@ function buildResidueLabelStyle(colorHex, options = {}) {
 }
 
 function addManualResidueLabels(labelScale = 1) {
+    if (!appState.viewer3Dmol) return;
+
     appState.manualLabels.forEach((labelData) => {
-        appState.viewer3Dmol.addLabel(
+        const label = appState.viewer3Dmol.addLabel(
             labelData.text,
             buildResidueLabelStyle(labelData.colorHex || '#0891b2', { scale: labelScale }),
             createResidueSelection(labelData.residue, labelData.authChain)
         );
+        if (label) dynamicOverlayLabels3Dmol.push(label);
+    });
+}
+
+function clearBaseResidueLabels3Dmol() {
+    if (!appState.viewer3Dmol) {
+        baseResidueLabels3Dmol = [];
+        return;
+    }
+
+    baseResidueLabels3Dmol.forEach((label) => {
+        try {
+            appState.viewer3Dmol.removeLabel(label);
+        } catch (error) {
+            // Ignore stale handles removed by a full redraw path.
+        }
+    });
+
+    baseResidueLabels3Dmol = [];
+}
+
+function addBaseResidueLabels3Dmol(labelScale = 1) {
+    if (!appState.viewer3Dmol) return;
+
+    const showLabels = document.getElementById('toggleLabels').checked;
+    if (!showLabels) return;
+
+    const showUnknown = document.getElementById('toggleUnknown').checked;
+
+    appState.modifications.forEach((mod) => {
+        if (!mod._isResolved) return;
+
+        const isKnown = mod['Knwon Positions Modifications'] === 'Y';
+        if (!isKnown && !showUnknown) return;
+
+        const residue = mod['Positions in the Structure'];
+        const labelText = `${mod._displayMod} ${residue}`;
+
+        const label = appState.viewer3Dmol.addLabel(
+            labelText,
+            buildResidueLabelStyle(mod._palette.hex, { scale: labelScale }),
+            { chain: mod._authChain, resi: residue.toString() }
+        );
+
+        if (label) baseResidueLabels3Dmol.push(label);
     });
 }
 
 function addMeasurementOverlay(labelScale = 1) {
+    if (!appState.viewer3Dmol) return;
+
     appState.measurementPairs.forEach((pair) => {
         if (!pair.centerA) pair.centerA = getResidueBoundingCenter(pair.a.residue, pair.a.authChain);
         if (!pair.centerB) pair.centerB = getResidueBoundingCenter(pair.b.residue, pair.b.authChain);
@@ -276,13 +447,12 @@ function addMeasurementOverlay(labelScale = 1) {
             return;
         }
 
-        const dx = secondCenter.x - firstCenter.x;
-        const dy = secondCenter.y - firstCenter.y;
-        const dz = secondCenter.z - firstCenter.z;
-        const distance = Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        const distance = typeof pair.distanceAngstrom === 'number'
+            ? pair.distanceAngstrom
+            : computeDistanceAngstrom(firstCenter, secondCenter);
         pair.distanceAngstrom = distance;
 
-        appState.viewer3Dmol.addLine({
+        const line = appState.viewer3Dmol.addLine({
             start: firstCenter,
             end: secondCenter,
             color: '#0f172a',
@@ -291,20 +461,23 @@ function addMeasurementOverlay(labelScale = 1) {
             gapLength: 0.3,
             linewidth: 4
         });
+        if (line) dynamicOverlayShapes3Dmol.push(line);
 
-        appState.viewer3Dmol.addLabel(
+        const labelA = appState.viewer3Dmol.addLabel(
             `${pair.a.display} ${pair.a.residue}`,
             buildResidueLabelStyle(pair.a.colorHex, { scale: labelScale }),
             createResidueSelection(pair.a.residue, pair.a.authChain)
         );
+        if (labelA) dynamicOverlayLabels3Dmol.push(labelA);
 
-        appState.viewer3Dmol.addLabel(
+        const labelB = appState.viewer3Dmol.addLabel(
             `${pair.b.display} ${pair.b.residue}`,
             buildResidueLabelStyle(pair.b.colorHex, { scale: labelScale }),
             createResidueSelection(pair.b.residue, pair.b.authChain)
         );
+        if (labelB) dynamicOverlayLabels3Dmol.push(labelB);
 
-        appState.viewer3Dmol.addLabel(
+        const distanceLabel = appState.viewer3Dmol.addLabel(
             `${distance.toFixed(2)} A`,
             buildResidueLabelStyle('#0f172a', {
                 scale: labelScale,
@@ -316,7 +489,35 @@ function addMeasurementOverlay(labelScale = 1) {
                 }
             })
         );
+        if (distanceLabel) dynamicOverlayLabels3Dmol.push(distanceLabel);
     });
+}
+
+function clear3DmolDynamicOverlays() {
+    if (!appState.viewer3Dmol) {
+        dynamicOverlayLabels3Dmol = [];
+        dynamicOverlayShapes3Dmol = [];
+        return;
+    }
+
+    dynamicOverlayLabels3Dmol.forEach((label) => {
+        try {
+            appState.viewer3Dmol.removeLabel(label);
+        } catch (error) {
+            // Ignore stale handles removed by a full redraw path.
+        }
+    });
+
+    dynamicOverlayShapes3Dmol.forEach((shape) => {
+        try {
+            appState.viewer3Dmol.removeShape(shape);
+        } catch (error) {
+            // Ignore stale handles removed by a full redraw path.
+        }
+    });
+
+    dynamicOverlayLabels3Dmol = [];
+    dynamicOverlayShapes3Dmol = [];
 }
 
 export function toggleManualResidueLabel(mod) {
@@ -329,34 +530,39 @@ export function toggleManualResidueLabel(mod) {
     if (appState.manualLabels.has(key)) {
         appState.manualLabels.delete(key);
     } else {
-        appState.manualLabels.set(key, {
+        const payload = mod._labelPayload || {
             residue,
             authChain: mod._authChain,
             colorHex: mod._palette.hex,
             text: `${mod._displayMod} ${residue}`
-        });
+        };
+        mod._labelPayload = payload;
+        appState.manualLabels.set(key, payload);
     }
 
-    updateCurrentEngineStyles();
+    updateCurrentEngineStyles({ mode: STYLE_UPDATE_MODE_OVERLAY });
     return { changed: true, reason: 'ok' };
 }
 
-export function clearManualResidueLabels() {
+export function clearManualResidueLabels(options = {}) {
+    const { skipRender = false } = options;
+    if (appState.manualLabels.size === 0) return false;
+
     appState.manualLabels.clear();
-    updateCurrentEngineStyles();
+    if (!skipRender) updateCurrentEngineStyles({ mode: STYLE_UPDATE_MODE_OVERLAY });
+    return true;
 }
 
 export function selectResidueForMeasurement(mod) {
     if (!mod || !mod._isResolved) return { changed: false, stage: 'invalid' };
     if (appState.currentEngine !== '3dmol') return { changed: false, stage: 'engine' };
 
+    const slotSource = mod._measurementSlot || buildMeasurementSlotFromMod(mod);
+    mod._measurementSlot = slotSource;
+
     const slot = {
-        residue: mod['Positions in the Structure'],
-        authChain: mod._authChain,
-        structId: mod._structId,
-        type: mod['Type Structure'],
-        display: mod._displayMod,
-        colorHex: mod._palette.hex
+        ...slotSource,
+        center: cloneCenter(slotSource.center)
     };
 
     const measure = appState.measurementDraft;
@@ -366,7 +572,6 @@ export function selectResidueForMeasurement(mod) {
     if (!measure.first) {
         measure.first = slot;
         measure.second = null;
-        updateCurrentEngineStyles();
         return { changed: true, stage: 'first' };
     }
 
@@ -376,52 +581,55 @@ export function selectResidueForMeasurement(mod) {
         id: ++appState.measurementPairCounter,
         a: measure.first,
         b: slot,
-        distanceAngstrom: null
+        centerA: cloneCenter(measure.first.center),
+        centerB: cloneCenter(slot.center),
+        distanceAngstrom: computeDistanceAngstrom(measure.first.center, slot.center)
     };
 
     appState.measurementPairs.unshift(pair);
     measure.first = null;
     measure.second = null;
-    updateCurrentEngineStyles();
+    updateCurrentEngineStyles({ mode: STYLE_UPDATE_MODE_OVERLAY });
     return { changed: true, stage: 'linked', pair };
 }
 
-export function clearMeasurementSelection() {
+export function clearMeasurementSelection(options = {}) {
+    const { skipRender = false } = options;
     const hadDraft = Boolean(appState.measurementDraft.first || appState.measurementDraft.second);
-    if (!hadDraft) return;
+    if (!hadDraft) return false;
 
     appState.measurementDraft.first = null;
     appState.measurementDraft.second = null;
-    updateCurrentEngineStyles();
+    if (!skipRender) updateCurrentEngineStyles({ mode: STYLE_UPDATE_MODE_OVERLAY });
+    return true;
 }
 
 export function unlinkMeasurementPair(pairId) {
     const previousLength = appState.measurementPairs.length;
     appState.measurementPairs = appState.measurementPairs.filter((pair) => pair.id !== pairId);
-    if (appState.measurementPairs.length === previousLength) return;
-    updateCurrentEngineStyles();
+    if (appState.measurementPairs.length === previousLength) return false;
+    updateCurrentEngineStyles({ mode: STYLE_UPDATE_MODE_OVERLAY });
+    return true;
 }
 
-export function clearAllMeasurementPairs() {
-    if (appState.measurementPairs.length === 0 && !appState.measurementDraft.first && !appState.measurementDraft.second) return;
+export function clearAllMeasurementPairs(options = {}) {
+    const { skipRender = false } = options;
+    if (appState.measurementPairs.length === 0 && !appState.measurementDraft.first && !appState.measurementDraft.second) return false;
 
     appState.measurementPairs = [];
     appState.measurementDraft.first = null;
     appState.measurementDraft.second = null;
-    updateCurrentEngineStyles();
+    if (!skipRender) updateCurrentEngineStyles({ mode: STYLE_UPDATE_MODE_OVERLAY });
+    return true;
 }
 
-function apply3DmolStyles(options = {}) {
+function apply3DmolBackboneStylesOnly() {
     if (!appState.viewer3Dmol) return;
 
     const config = rnaConfig[appState.currentRibo];
     const showProteins = document.getElementById('toggleProteins').checked;
-    const showLabels = document.getElementById('toggleLabels').checked;
-    const labelScale = normalizeLabelScale(options.labelScale);
 
     appState.viewer3Dmol.setStyle({}, {});
-    appState.viewer3Dmol.removeAllLabels();
-    appState.viewer3Dmol.removeAllShapes();
 
     if (showProteins) {
         appState.viewer3Dmol.setStyle({}, {
@@ -458,26 +666,51 @@ function apply3DmolStyles(options = {}) {
             }
         );
     });
+}
 
-    if (showLabels) {
-        const showUnknown = document.getElementById('toggleUnknown').checked;
+export function refresh3DmolProteinsOnly() {
+    if (appState.currentEngine !== '3dmol' || !appState.viewer3Dmol) return false;
+    apply3DmolBackboneStylesOnly();
+    appState.viewer3Dmol.render();
+    return true;
+}
 
-        appState.modifications.forEach((mod) => {
-            if (!mod._isResolved) return;
+export function refresh3DmolBaseLabelsOnly(options = {}) {
+    if (appState.currentEngine !== '3dmol' || !appState.viewer3Dmol) return false;
 
-            const isKnown = mod['Knwon Positions Modifications'] === 'Y';
-            if (!isKnown && !showUnknown) return;
+    const labelScale = normalizeLabelScale(options.labelScale);
+    clearBaseResidueLabels3Dmol();
+    addBaseResidueLabels3Dmol(labelScale);
+    appState.viewer3Dmol.render();
+    return true;
+}
 
-            const residue = mod['Positions in the Structure'];
-            const labelText = `${mod._displayMod} ${residue}`;
+function apply3DmolOverlayOnly(options = {}) {
+    if (!appState.viewer3Dmol) return;
 
-            appState.viewer3Dmol.addLabel(
-                labelText,
-                buildResidueLabelStyle(mod._palette.hex, { scale: labelScale }),
-                { chain: mod._authChain, resi: residue.toString() }
-            );
-        });
-    }
+    const labelScale = normalizeLabelScale(options.labelScale);
+    clear3DmolDynamicOverlays();
+    addManualResidueLabels(labelScale);
+    addMeasurementOverlay(labelScale);
+    appState.viewer3Dmol.render();
+}
+
+function apply3DmolStyles(options = {}) {
+    if (!appState.viewer3Dmol) return;
+
+    baseResidueLabels3Dmol = [];
+
+    const labelScale = normalizeLabelScale(options.labelScale);
+
+    dynamicOverlayLabels3Dmol = [];
+    dynamicOverlayShapes3Dmol = [];
+
+    appState.viewer3Dmol.setStyle({}, {});
+    appState.viewer3Dmol.removeAllLabels();
+    appState.viewer3Dmol.removeAllShapes();
+
+    apply3DmolBackboneStylesOnly();
+    addBaseResidueLabels3Dmol(labelScale);
 
     // Always draw user-managed overlays after base/global labels.
     addManualResidueLabels(labelScale);

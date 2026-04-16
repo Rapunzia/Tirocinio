@@ -3,12 +3,14 @@ import { rnaConfig, supportedEngines } from './constants.js';
 import { showToast } from './ui/toast.js';
 import { setLoading, finishProgress } from './ui/loading.js';
 import { buildResidueCache } from './data/cif-cache.js';
-import { hydrateModifications } from './data/modifications.js';
+import { hydrateModifications, warmupModificationDataInBackground } from './data/modifications.js';
 import {
     applyFilters,
     generateDOMList,
     initModListSelectionHandler,
+    prependMeasurementPairNode,
     refreshInteractionMarkers,
+    removeMeasurementPairNode,
     setMeasurementPairUnlinkHandler,
     setFilterQuery,
     setFilterType,
@@ -23,6 +25,8 @@ import {
     exportSnapshot,
     resetCameraView,
     renderActiveEngine,
+    refresh3DmolBaseLabelsOnly,
+    refresh3DmolProteinsOnly,
     selectResidueForMeasurement,
     toggleManualResidueLabel,
     unlinkMeasurementPair,
@@ -31,7 +35,26 @@ import {
 
 let opacityUpdateTimerId = null;
 let pendingFocusRequest = null;
-let focusRequestFrameId = null;
+let focusRequestTimerId = null;
+let pendingInteractionUiTimerId = null;
+
+function waitNextFrame() {
+    return new Promise((resolve) => {
+        requestAnimationFrame(() => {
+            setTimeout(resolve, 0);
+        });
+    });
+}
+
+function scheduleInteractionUiRefresh() {
+    if (pendingInteractionUiTimerId) return;
+
+    pendingInteractionUiTimerId = setTimeout(() => {
+        pendingInteractionUiTimerId = null;
+        refreshInteractionMarkers();
+        updateInteractionPanels();
+    }, 0);
+}
 
 // Entry point for wiring UI events and cross-module interactions.
 export function initializeApp() {
@@ -57,16 +80,16 @@ export function initializeApp() {
 
 function scheduleResidueFocus(mod) {
     pendingFocusRequest = mod;
-    if (focusRequestFrameId) return;
+    if (focusRequestTimerId) return;
 
-    focusRequestFrameId = requestAnimationFrame(() => {
-        focusRequestFrameId = null;
+    focusRequestTimerId = setTimeout(() => {
+        focusRequestTimerId = null;
         const next = pendingFocusRequest;
         pendingFocusRequest = null;
         if (!next) return;
 
         centerOnResidue(next['Positions in the Structure'], next._authChain, next._structId);
-    });
+    }, 0);
 }
 
 function handleResidueListSelection(mod) {
@@ -75,8 +98,7 @@ function handleResidueListSelection(mod) {
         if (!result.changed && result.reason === 'engine') {
             showToast('Label edit mode currently supports 3Dmol only.', true);
         }
-        refreshInteractionMarkers();
-        updateInteractionPanels();
+        scheduleInteractionUiRefresh();
         return;
     }
 
@@ -89,13 +111,12 @@ function handleResidueListSelection(mod) {
             showToast('First residue selected. Click a second residue to measure distance.');
         } else if (result.stage === 'linked') {
             showToast('Residue pair linked for distance measurement.');
-            generateDOMList();
+            prependMeasurementPairNode(result.pair);
         } else if (result.stage === 'same') {
             showToast('Choose a different second residue.', true);
         }
 
-        refreshInteractionMarkers();
-        updateInteractionPanels();
+        scheduleInteractionUiRefresh();
         return;
     }
 
@@ -103,10 +124,10 @@ function handleResidueListSelection(mod) {
 }
 
 function handlePairUnlink(pairId) {
-    unlinkMeasurementPair(pairId);
-    generateDOMList();
-    updateInteractionPanels();
-    showToast('Measurement pair unlinked.');
+    const didUnlink = unlinkMeasurementPair(pairId);
+    if (didUnlink) removeMeasurementPairNode(pairId);
+    scheduleInteractionUiRefresh();
+    if (didUnlink) showToast('Measurement pair unlinked.');
 }
 
 function bindEngineSelector() {
@@ -123,7 +144,31 @@ function bindEngineSelector() {
 }
 
 function bindStructureLoader() {
-    document.getElementById('loadCifBtn').addEventListener('click', async () => {
+    const loadButton = document.getElementById('loadCifBtn');
+
+    function setLoadButtonWorking(isWorking) {
+        if (isWorking) {
+            if (!loadButton.dataset.defaultLabel) {
+                loadButton.dataset.defaultLabel = loadButton.innerHTML;
+            }
+
+            loadButton.classList.add('is-working');
+            loadButton.disabled = true;
+            loadButton.setAttribute('aria-busy', 'true');
+            loadButton.innerHTML = '<span class="btn-icon">...</span> Loading';
+            return;
+        }
+
+        loadButton.classList.remove('is-working');
+        loadButton.disabled = false;
+        loadButton.removeAttribute('aria-busy');
+        if (loadButton.dataset.defaultLabel) loadButton.innerHTML = loadButton.dataset.defaultLabel;
+    }
+
+    loadButton.addEventListener('click', async () => {
+        setLoadButtonWorking(true);
+        await waitNextFrame();
+
         const selectedRibo = document.getElementById('riboSelect').value;
         const config = rnaConfig[selectedRibo];
 
@@ -144,7 +189,8 @@ function bindStructureLoader() {
             if (appState.modifications.length > 0) {
                 hydrateModifications();
                 generateDOMList();
-                updateInteractionPanels();
+                warmupModificationDataInBackground();
+                scheduleInteractionUiRefresh();
             }
 
             renderActiveEngine();
@@ -152,11 +198,15 @@ function bindStructureLoader() {
         } catch (error) {
             finishProgress();
             showToast('Load failed. Check that your local server is running.', true);
+        } finally {
+            setLoadButtonWorking(false);
         }
     });
 }
 
 function bindJsonLoader() {
+    const uploadPill = document.getElementById('uploadPill');
+
     document.getElementById('jsonFile').addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -164,24 +214,32 @@ function bindJsonLoader() {
         document.getElementById('fileNameDisplay').textContent = truncateFileName(file.name);
 
         const reader = new FileReader();
-        reader.onload = (loadEvent) => {
-            try {
-                const parsed = JSON.parse(loadEvent.target.result);
-                if (!Array.isArray(parsed)) throw new Error('Expected JSON array.');
-                appState.modifications = parsed;
-                appState.manualLabels.clear();
-                clearMeasurementSelection();
-                clearAllMeasurementPairs();
-            } catch (error) {
-                showToast('Invalid JSON file.', true);
-                return;
-            }
+        reader.onload = async (loadEvent) => {
+            uploadPill.classList.add('is-working');
+            await waitNextFrame();
 
-            hydrateModifications();
-            generateDOMList();
-            updateCurrentEngineStyles();
-            updateInteractionPanels();
-            showToast(`Loaded ${appState.modifications.length} modifications.`);
+            try {
+                try {
+                    const parsed = JSON.parse(loadEvent.target.result);
+                    if (!Array.isArray(parsed)) throw new Error('Expected JSON array.');
+                    appState.modifications = parsed;
+                    appState.manualLabels.clear();
+                    clearMeasurementSelection({ skipRender: true });
+                    clearAllMeasurementPairs({ skipRender: true });
+                } catch (error) {
+                    showToast('Invalid JSON file.', true);
+                    return;
+                }
+
+                hydrateModifications();
+                generateDOMList();
+                updateCurrentEngineStyles();
+                warmupModificationDataInBackground();
+                scheduleInteractionUiRefresh();
+                showToast(`Loaded ${appState.modifications.length} modifications.`);
+            } finally {
+                uploadPill.classList.remove('is-working');
+            }
         };
 
         reader.readAsText(file);
@@ -194,7 +252,9 @@ function bindOpacitySlider() {
         if (opacityUpdateTimerId) return;
         opacityUpdateTimerId = setTimeout(() => {
             opacityUpdateTimerId = null;
-            updateCurrentEngineStyles();
+            if (!refresh3DmolProteinsOnly()) {
+                updateCurrentEngineStyles();
+            }
         }, 75);
     };
 
@@ -209,9 +269,9 @@ function bindOpacitySlider() {
             clearTimeout(opacityUpdateTimerId);
             opacityUpdateTimerId = null;
         }
-        requestAnimationFrame(() => {
+        if (!refresh3DmolProteinsOnly()) {
             updateCurrentEngineStyles();
-        });
+        }
     });
 }
 
@@ -238,7 +298,7 @@ function bindFilterControls() {
     document.getElementById('sortMode').addEventListener('change', function onSortChange() {
         setSortMode(this.value);
         generateDOMList();
-        updateInteractionPanels();
+        scheduleInteractionUiRefresh();
     });
 }
 
@@ -256,9 +316,9 @@ function bindInteractionTools() {
     });
 
     document.getElementById('clearLabelsBtn').addEventListener('click', () => {
-        clearManualResidueLabels();
-        refreshInteractionMarkers();
-        updateInteractionPanels();
+        const changed = clearManualResidueLabels({ skipRender: true });
+        scheduleInteractionUiRefresh();
+        if (changed) updateCurrentEngineStyles({ mode: 'overlay' });
         showToast('All manual residue labels removed.');
     });
 }
@@ -291,7 +351,9 @@ function bindLegendControls() {
 
 function bindViewerToggles() {
     document.getElementById('toggleProteins').addEventListener('change', () => {
-        updateCurrentEngineStyles();
+        if (!refresh3DmolProteinsOnly()) {
+            updateCurrentEngineStyles();
+        }
     });
 
     document.getElementById('toggleLabels').addEventListener('change', () => {
@@ -300,7 +362,9 @@ function bindViewerToggles() {
             document.getElementById('toggleLabels').checked = false;
             return;
         }
-        updateCurrentEngineStyles();
+        if (!refresh3DmolBaseLabelsOnly()) {
+            updateCurrentEngineStyles();
+        }
     });
 }
 
@@ -344,12 +408,16 @@ function setInteractionMode(mode) {
     document.getElementById('modeLabelBtn').classList.toggle('active', mode === 'label');
     document.getElementById('modeMeasureBtn').classList.toggle('active', mode === 'measure');
 
+    let didClearMeasurementDraft = false;
     if (mode !== 'measure') {
-        clearMeasurementSelection();
+        didClearMeasurementDraft = clearMeasurementSelection({ skipRender: true });
     }
 
-    refreshInteractionMarkers();
-    updateInteractionPanels();
+    scheduleInteractionUiRefresh();
+
+    if (didClearMeasurementDraft) {
+        updateCurrentEngineStyles({ mode: 'overlay' });
+    }
 }
 
 function updateInteractionPanels() {

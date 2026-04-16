@@ -2,6 +2,21 @@ import { appState } from '../state.js';
 
 let onResidueSelected = null;
 let onPairUnlink = null;
+let pendingResidueSelectionTimerId = null;
+let pendingResidueSelectionMod = null;
+
+function scheduleResidueSelection(mod) {
+    pendingResidueSelectionMod = mod;
+    if (pendingResidueSelectionTimerId) return;
+
+    pendingResidueSelectionTimerId = setTimeout(() => {
+        pendingResidueSelectionTimerId = null;
+        const nextMod = pendingResidueSelectionMod;
+        pendingResidueSelectionMod = null;
+        if (!nextMod || !onResidueSelected) return;
+        onResidueSelected(nextMod);
+    }, 0);
+}
 
 function getResidueKey(mod) {
     return `${mod['Positions in the Structure']}|${mod._authChain}`;
@@ -109,6 +124,41 @@ function createLinkedPairNode(pair) {
     return item;
 }
 
+function getModListElement() {
+    return document.getElementById('modList');
+}
+
+function removeStaticEmptyMessageIfPresent(listElement) {
+    const first = listElement.firstElementChild;
+    if (first && first.classList.contains('empty-msg') && !first.id) {
+        first.remove();
+    }
+}
+
+export function prependMeasurementPairNode(pair) {
+    if (!pair) return;
+
+    const listElement = getModListElement();
+    if (!listElement) return;
+
+    removeStaticEmptyMessageIfPresent(listElement);
+    listElement.insertBefore(createLinkedPairNode(pair), listElement.firstChild);
+}
+
+export function removeMeasurementPairNode(pairId) {
+    const listElement = getModListElement();
+    if (!listElement) return;
+
+    const pairNode = listElement.querySelector(`.li-linked-pair[data-pair-id="${pairId}"]`);
+    if (!pairNode) return;
+    pairNode.remove();
+
+    if (appState.modifications.length === 0 && appState.measurementPairs.length === 0) {
+        listElement.innerHTML = '<li class="empty-msg">Load files to see residues...</li>';
+        document.getElementById('residueCount').textContent = '\u2014';
+    }
+}
+
 export function refreshInteractionMarkers() {
     const context = {
         measureAKey: getMeasurementKey(appState.measurementDraft.first),
@@ -141,7 +191,7 @@ export function initModListSelectionHandler(selectionCallback) {
         const mod = appState.modifications[item.dataset.idx];
         if (!mod || !onResidueSelected) return;
 
-        onResidueSelected(mod);
+        scheduleResidueSelection(mod);
     });
 }
 
