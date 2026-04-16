@@ -27,6 +27,9 @@ const STYLE_UPDATE_MODE_OVERLAY = 'overlay';
 const EXPORT_WIDTH_3DMOL = 3840;
 const EXPORT_HEIGHT_3DMOL = 2160;
 const BASE_LABEL_FONT_SIZE = 11;
+const BASE_LABEL_BATCH_SIZE = 120;
+
+let baseLabelBuildToken3Dmol = 0;
 
 // Releases WebGL and DOM resources used by one engine instance.
 export function destroyEngine(engineName) {
@@ -388,6 +391,8 @@ function addManualResidueLabels(labelScale = 1) {
 }
 
 function clearBaseResidueLabels3Dmol() {
+    baseLabelBuildToken3Dmol += 1;
+
     if (!appState.viewer3Dmol) {
         baseResidueLabels3Dmol = [];
         return;
@@ -404,13 +409,9 @@ function clearBaseResidueLabels3Dmol() {
     baseResidueLabels3Dmol = [];
 }
 
-function addBaseResidueLabels3Dmol(labelScale = 1) {
-    if (!appState.viewer3Dmol) return;
-
-    const showLabels = document.getElementById('toggleLabels').checked;
-    if (!showLabels) return;
-
+function getEligibleBaseLabelMods() {
     const showUnknown = document.getElementById('toggleUnknown').checked;
+    const eligible = [];
 
     appState.modifications.forEach((mod) => {
         if (!mod._isResolved) return;
@@ -418,6 +419,32 @@ function addBaseResidueLabels3Dmol(labelScale = 1) {
         const isKnown = mod['Knwon Positions Modifications'] === 'Y';
         if (!isKnown && !showUnknown) return;
 
+        eligible.push(mod);
+    });
+
+    return eligible;
+}
+
+function addBaseResidueLabels3Dmol(labelScale = 1) {
+    if (!appState.viewer3Dmol) return;
+
+    const showLabels = document.getElementById('toggleLabels').checked;
+    if (!showLabels) return;
+
+    const eligibleMods = getEligibleBaseLabelMods();
+    if (eligibleMods.length === 0) return;
+
+    const token = ++baseLabelBuildToken3Dmol;
+    let cursor = 0;
+
+    const renderChunk = () => {
+        if (!appState.viewer3Dmol) return;
+        if (token !== baseLabelBuildToken3Dmol) return;
+        if (!document.getElementById('toggleLabels').checked) return;
+
+        const end = Math.min(cursor + BASE_LABEL_BATCH_SIZE, eligibleMods.length);
+        for (; cursor < end; cursor += 1) {
+            const mod = eligibleMods[cursor];
         const residue = mod['Positions in the Structure'];
         const labelText = `${mod._displayMod} ${residue}`;
 
@@ -427,8 +454,17 @@ function addBaseResidueLabels3Dmol(labelScale = 1) {
             { chain: mod._authChain, resi: residue.toString() }
         );
 
-        if (label) baseResidueLabels3Dmol.push(label);
-    });
+            if (label) baseResidueLabels3Dmol.push(label);
+        }
+
+        appState.viewer3Dmol.render();
+
+        if (cursor < eligibleMods.length) {
+            setTimeout(renderChunk, 0);
+        }
+    };
+
+    setTimeout(renderChunk, 0);
 }
 
 function addMeasurementOverlay(labelScale = 1) {

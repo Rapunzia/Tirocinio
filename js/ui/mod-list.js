@@ -5,6 +5,9 @@ let onPairUnlink = null;
 let pendingResidueSelectionTimerId = null;
 let pendingResidueSelectionMod = null;
 
+let residueModByKey = new Map();
+let previousMarkerState = null;
+
 function scheduleResidueSelection(mod) {
     pendingResidueSelectionMod = mod;
     if (pendingResidueSelectionTimerId) return;
@@ -34,6 +37,46 @@ function buildLinkedResidueKeySet() {
         linkedKeys.add(`${pair.b.residue}|${pair.b.authChain}`);
     });
     return linkedKeys;
+}
+
+function buildManualLabelKeySet() {
+    return new Set(appState.manualLabels.keys());
+}
+
+function addMaybe(set, value) {
+    if (value) set.add(value);
+}
+
+function addSymmetricDiff(target, previousSet, nextSet) {
+    previousSet.forEach((value) => {
+        if (!nextSet.has(value)) target.add(value);
+    });
+
+    nextSet.forEach((value) => {
+        if (!previousSet.has(value)) target.add(value);
+    });
+}
+
+function rebuildResidueModIndex() {
+    residueModByKey = new Map();
+
+    appState.modifications.forEach((mod) => {
+        if (!mod || !mod._domNode) return;
+        residueModByKey.set(getResidueKey(mod), mod);
+    });
+}
+
+function snapshotMarkerState() {
+    return {
+        measureAKey: getMeasurementKey(appState.measurementDraft.first),
+        measureBKey: getMeasurementKey(appState.measurementDraft.second),
+        linkedResidueKeys: buildLinkedResidueKeySet(),
+        manualLabelKeys: buildManualLabelKeySet()
+    };
+}
+
+function resetMarkerStateCache() {
+    previousMarkerState = null;
 }
 
 function getResidueNumber(mod) {
@@ -160,13 +203,31 @@ export function removeMeasurementPairNode(pairId) {
 }
 
 export function refreshInteractionMarkers() {
-    const context = {
-        measureAKey: getMeasurementKey(appState.measurementDraft.first),
-        measureBKey: getMeasurementKey(appState.measurementDraft.second),
-        linkedResidueKeys: buildLinkedResidueKeySet()
-    };
+    const nextState = snapshotMarkerState();
 
-    appState.modifications.forEach((mod) => applyInteractionMarkersForItem(mod, context));
+    if (!previousMarkerState || residueModByKey.size === 0) {
+        appState.modifications.forEach((mod) => applyInteractionMarkersForItem(mod, nextState));
+        previousMarkerState = nextState;
+        return;
+    }
+
+    const changedResidueKeys = new Set();
+
+    addMaybe(changedResidueKeys, previousMarkerState.measureAKey);
+    addMaybe(changedResidueKeys, previousMarkerState.measureBKey);
+    addMaybe(changedResidueKeys, nextState.measureAKey);
+    addMaybe(changedResidueKeys, nextState.measureBKey);
+
+    addSymmetricDiff(changedResidueKeys, previousMarkerState.linkedResidueKeys, nextState.linkedResidueKeys);
+    addSymmetricDiff(changedResidueKeys, previousMarkerState.manualLabelKeys, nextState.manualLabelKeys);
+
+    changedResidueKeys.forEach((key) => {
+        const mod = residueModByKey.get(key);
+        if (!mod) return;
+        applyInteractionMarkersForItem(mod, nextState);
+    });
+
+    previousMarkerState = nextState;
 }
 
 // Registers one delegated click handler for residue cards.
@@ -238,6 +299,8 @@ export function generateDOMList() {
     });
 
     listElement.appendChild(fragment);
+    rebuildResidueModIndex();
+    resetMarkerStateCache();
     applyFilters();
 }
 
