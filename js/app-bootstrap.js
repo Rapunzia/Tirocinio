@@ -17,6 +17,7 @@ import {
     setSortMode
 } from './ui/mod-list.js';
 import {
+    clear3DmolResidueHover,
     clearAllMeasurementPairs,
     clearManualResidueLabels,
     clearMeasurementSelection,
@@ -28,6 +29,7 @@ import {
     refresh3DmolBaseLabelsOnly,
     refresh3DmolProteinsOnly,
     selectResidueForMeasurement,
+    set3DmolResiduePickHandler,
     toggleManualResidueLabel,
     unlinkMeasurementPair,
     updateCurrentEngineStyles
@@ -60,6 +62,7 @@ function scheduleInteractionUiRefresh() {
 export function initializeApp() {
     initModListSelectionHandler(handleResidueListSelection);
     setMeasurementPairUnlinkHandler(handlePairUnlink);
+    set3DmolResiduePickHandler(handleResidueListSelection);
 
     bindEngineSelector();
     bindStructureLoader();
@@ -330,7 +333,7 @@ function bindSidebarToggle() {
 
     toggleButton.addEventListener('click', () => {
         const collapsed = workspace.classList.toggle('sidebar-collapsed');
-        toggleButton.textContent = collapsed ? 'PANEL ▶' : 'PANEL ◀';
+        toggleButton.textContent = collapsed ? '◀' : '▶';
         toggleButton.setAttribute('aria-expanded', String(!collapsed));
         toggleButton.title = collapsed ? 'Expand right panel' : 'Collapse right panel';
     });
@@ -411,6 +414,12 @@ function setInteractionMode(mode) {
     let didClearMeasurementDraft = false;
     if (mode !== 'measure') {
         didClearMeasurementDraft = clearMeasurementSelection({ skipRender: true });
+        clear3DmolResidueHover();
+    }
+
+    const threeDContainer = document.getElementById('gldiv-3dmol');
+    if (threeDContainer) {
+        threeDContainer.style.cursor = mode === 'measure' ? 'crosshair' : 'default';
     }
 
     scheduleInteractionUiRefresh();
@@ -430,8 +439,8 @@ function updateInteractionPanels() {
     } else if (appState.interactionMode === 'measure') {
         const hasDraft = Boolean(appState.measurementDraft.first);
         modeHint.textContent = hasDraft
-            ? `Measure mode: selected ${formatResidueTag(appState.measurementDraft.first)}, click a second residue to link.`
-            : 'Measure mode: click two residues to create a linked distance pair (3Dmol).';
+            ? `Measure mode: selected ${formatResidueTag(appState.measurementDraft.first)}, click a second residue in the 3D viewer to link.`
+            : 'Measure mode: hover/click selectable residues directly in the 3D viewer to create a distance pair (3Dmol).';
     } else {
         modeHint.textContent = 'Navigate mode: click a residue to focus it in the active viewer.';
     }

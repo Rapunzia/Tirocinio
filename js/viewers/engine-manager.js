@@ -11,6 +11,10 @@ let focusPulseShape3Dmol = null;
 let focusPulseTimer3Dmol = null;
 let pendingStyleUpdateTimerId = null;
 let pendingStyleUpdateMode = 'full';
+let hoverResidueLabel3Dmol = null;
+let hoveredResidueKey3Dmol = null;
+let hasBound3DmolPicking = false;
+let on3DmolResiduePicked = null;
 
 let dynamicOverlayLabels3Dmol = [];
 let dynamicOverlayShapes3Dmol = [];
@@ -19,6 +23,11 @@ let baseResidueLabels3Dmol = [];
 const styleGroupCacheByChainProperty = {
     _authChain: { key: null, groups: [] },
     _structId: { key: null, groups: [] }
+};
+
+const selectableResidueCache3Dmol = {
+    key: null,
+    map: new Map()
 };
 
 const STYLE_UPDATE_MODE_FULL = 'full';
@@ -35,9 +44,11 @@ let baseLabelBuildToken3Dmol = 0;
 export function destroyEngine(engineName) {
     try {
         if (engineName === '3dmol' && appState.viewer3Dmol) {
+            clear3DmolHoverResidue();
             appState.viewer3Dmol.removeAllModels();
             document.getElementById('gldiv-3dmol').innerHTML = '';
             appState.viewer3Dmol = null;
+            hasBound3DmolPicking = false;
         } else if (engineName === 'molstar' && appState.viewerMolstar) {
             document.getElementById('gldiv-molstar').innerHTML = '';
             appState.viewerMolstar = null;
@@ -89,6 +100,7 @@ function render3Dmol() {
 
     appState.viewer3Dmol.clear();
     appState.viewer3Dmol.addModel(appState.structureDataText, 'cif');
+    bind3DmolResiduePicking();
     appState.viewer3Dmol.zoomTo();
     apply3DmolStyles();
     finishProgress();
@@ -276,6 +288,165 @@ function buildStyleGroups(chainProperty) {
 
 function buildResidueKey(residue, authChain) {
     return `${residue}|${authChain}`;
+}
+
+function getSelectableResidueModMap3Dmol() {
+    const showUnknown = document.getElementById('toggleUnknown').checked;
+    const hydrationToken = getModificationsHydrationToken();
+    const cacheKey = `${hydrationToken}|${showUnknown ? '1' : '0'}`;
+
+    if (selectableResidueCache3Dmol.key === cacheKey) {
+        return selectableResidueCache3Dmol.map;
+    }
+
+    const map = new Map();
+
+    appState.modifications.forEach((mod) => {
+        if (!mod._isResolved) return;
+
+        const isKnown = mod['Knwon Positions Modifications'] === 'Y';
+        if (!isKnown && !showUnknown) return;
+
+        const residue = mod['Positions in the Structure'];
+        map.set(buildResidueKey(residue, mod._authChain), mod);
+    });
+
+    selectableResidueCache3Dmol.key = cacheKey;
+    selectableResidueCache3Dmol.map = map;
+    return map;
+}
+
+function getSelectableModFromPickedAtom(atom) {
+    if (!atom) return null;
+
+    const residue = atom.resi ?? atom.resno;
+    if (residue === null || residue === undefined) return null;
+
+    const chainCandidates = [
+        atom.chain,
+        atom.auth,
+        atom.chainname,
+        atom.pdbchain
+    ].filter(Boolean);
+
+    if (chainCandidates.length === 0) return null;
+
+    const map = getSelectableResidueModMap3Dmol();
+
+    for (const chain of chainCandidates) {
+        const match = map.get(buildResidueKey(residue, chain));
+        if (match) return match;
+    }
+
+    return null;
+}
+
+function clear3DmolHoverResidue() {
+    hoveredResidueKey3Dmol = null;
+
+    if (!appState.viewer3Dmol || !hoverResidueLabel3Dmol) {
+        hoverResidueLabel3Dmol = null;
+        return;
+    }
+
+    try {
+        if (hoverResidueLabel3Dmol) appState.viewer3Dmol.removeLabel(hoverResidueLabel3Dmol);
+    } catch (error) {
+        // Ignore stale handles removed by a full redraw path.
+    }
+
+    hoverResidueLabel3Dmol = null;
+}
+
+function paint3DmolHoverResidue(mod) {
+    if (!appState.viewer3Dmol || !mod) return;
+
+    const residue = mod['Positions in the Structure'];
+    const residueKey = buildResidueKey(residue, mod._authChain);
+    if (hoveredResidueKey3Dmol === residueKey) return;
+
+    clear3DmolHoverResidue();
+
+    const center = getResidueBoundingCenter(residue, mod._authChain);
+    if (!center) return;
+
+    hoverResidueLabel3Dmol = appState.viewer3Dmol.addLabel(
+        `${mod._displayMod} ${residue}`,
+        buildResidueLabelStyle(mod._palette.hex, {
+            scale: 0.95,
+            alignment: 'topLeft',
+            position: {
+                x: center.x + 2.1,
+                y: center.y + 2.1,
+                z: center.z + 1.0
+            }
+        })
+    );
+
+    hoveredResidueKey3Dmol = residueKey;
+    appState.viewer3Dmol.render();
+}
+
+function bind3DmolResiduePicking() {
+    if (!appState.viewer3Dmol || hasBound3DmolPicking) return;
+
+    if (typeof appState.viewer3Dmol.setHoverDuration === 'function') {
+        appState.viewer3Dmol.setHoverDuration(60);
+    }
+
+    appState.viewer3Dmol.setClickable({}, true, (atom) => {
+        if (appState.interactionMode !== 'measure') return;
+
+        const mod = getSelectableModFromPickedAtom(atom);
+        if (!mod) return;
+
+        if (typeof on3DmolResiduePicked === 'function') {
+            on3DmolResiduePicked(mod);
+        }
+    });
+
+    appState.viewer3Dmol.setHoverable(
+        {},
+        true,
+        (atom) => {
+            if (appState.interactionMode !== 'measure') {
+                if (hoverResidueLabel3Dmol) {
+                    clear3DmolHoverResidue();
+                    appState.viewer3Dmol.render();
+                }
+                return;
+            }
+
+            const mod = getSelectableModFromPickedAtom(atom);
+            if (!mod) {
+                if (hoverResidueLabel3Dmol) {
+                    clear3DmolHoverResidue();
+                    appState.viewer3Dmol.render();
+                }
+                return;
+            }
+
+            paint3DmolHoverResidue(mod);
+        },
+        () => {
+            if (!hoverResidueLabel3Dmol) return;
+            clear3DmolHoverResidue();
+            appState.viewer3Dmol.render();
+        }
+    );
+
+    hasBound3DmolPicking = true;
+}
+
+export function set3DmolResiduePickHandler(handler) {
+    on3DmolResiduePicked = typeof handler === 'function' ? handler : null;
+}
+
+export function clear3DmolResidueHover() {
+    if (!hoverResidueLabel3Dmol && !hoveredResidueKey3Dmol) return false;
+    clear3DmolHoverResidue();
+    if (appState.viewer3Dmol) appState.viewer3Dmol.render();
+    return true;
 }
 
 function cacheResidueCenter(residue, authChain, center) {
@@ -735,6 +906,7 @@ function apply3DmolStyles(options = {}) {
     if (!appState.viewer3Dmol) return;
 
     baseResidueLabels3Dmol = [];
+    clear3DmolHoverResidue();
 
     const labelScale = normalizeLabelScale(options.labelScale);
 
