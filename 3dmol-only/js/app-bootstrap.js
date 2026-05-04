@@ -1,9 +1,8 @@
 import { appState } from './state.js';
-import { rnaConfig, supportedEngines } from './constants.js';
+import { rnaConfig, modPalette, statusPalette } from './constants.js';
 import { showToast } from './ui/toast.js';
 import { setLoading, finishProgress } from './ui/loading.js';
-import { buildResidueCache } from './data/cif-cache.js';
-import { hydrateModifications, warmupModificationDataInBackground } from './data/modifications.js';
+import { applyColorModeToModifications, hydrateModifications } from './data/modifications.js';
 import {
     applyFilters,
     generateDOMList,
@@ -17,20 +16,15 @@ import {
     setFilterType,
     setSortMode
 } from './ui/mod-list.js';
-import { initializeBenchmarkDashboard } from './ui/benchmark.js';
 import {
-    clear3DmolResidueHover,
     clearAllMeasurementPairs,
     clearManualResidueLabels,
     clearMeasurementSelection,
     centerOnMeasurementPair,
     centerOnResidue,
-    destroyEngine,
     exportSnapshot,
     resetCameraView,
     renderActiveEngine,
-    refresh3DmolBaseLabelsOnly,
-    set3DmolMeasureHoverEnabled,
     refresh3DmolProteinsOnly,
     selectResidueForMeasurement,
     set3DmolResiduePickHandler,
@@ -43,6 +37,7 @@ let opacityUpdateTimerId = null;
 let pendingFocusRequest = null;
 let focusRequestTimerId = null;
 let pendingInteractionUiTimerId = null;
+let contextMenuResidue = null;
 
 function waitNextFrame() {
     return new Promise((resolve) => {
@@ -67,24 +62,21 @@ export function initializeApp() {
     initModListSelectionHandler(handleResidueListSelection);
     setMeasurementPairUnlinkHandler(handlePairUnlink);
     setMeasurementPairSelectionHandler(handlePairFocus);
-    set3DmolResiduePickHandler(handleResidueListSelection);
+    set3DmolResiduePickHandler(handleViewerResiduePick);
 
-    bindEngineSelector();
     bindStructureLoader();
     bindJsonLoader();
     bindOpacitySlider();
+    bindColorModeControl();
     bindFilterControls();
-    bindInteractionTools();
+    bindLabelTools();
     bindSidebarToggle();
     bindLegendControls();
     bindViewerToggles();
     bindCameraReset();
     bindSnapshotExport();
-    initializeBenchmarkDashboard();
-
-    syncEnginePanels();
-    syncOpacityControlVisibility();
-    setInteractionMode('navigate');
+    bindResidueContextMenu();
+    renderLegend();
 }
 
 function scheduleResidueFocus(mod) {
@@ -97,37 +89,34 @@ function scheduleResidueFocus(mod) {
         pendingFocusRequest = null;
         if (!next) return;
 
-        centerOnResidue(next['Positions in the Structure'], next._authChain, next._structId);
+        centerOnResidue(next.resi, next._authChain);
     }, 0);
 }
 
-function handlePairFocus(pair) {
-    centerOnMeasurementPair(pair);
-}
+function handleViewerResiduePick(mod, meta = {}) {
+    const isRightClick = meta.mouseButton === 'right';
 
-function handleResidueListSelection(mod) {
-    if (appState.interactionMode === 'label') {
-        const result = toggleManualResidueLabel(mod);
-        if (!result.changed && result.reason === 'engine') {
-            showToast('Label edit mode currently supports 3Dmol only.', true);
-        }
-        scheduleInteractionUiRefresh();
+    if (isRightClick) {
+        openResidueContextMenu(mod, meta.clientX, meta.clientY);
         return;
     }
 
-    if (appState.interactionMode === 'measure') {
+    closeResidueContextMenu();
+
+    if (appState.measurementDraft.first) {
         const result = selectResidueForMeasurement(mod);
 
-        if (result.stage === 'engine') {
-            showToast('Measurement mode currently supports 3Dmol only.', true);
-        } else if (result.stage === 'first') {
-            showToast('First residue selected. Click a second residue to measure distance.');
-        } else if (result.stage === 'linked') {
-            showToast('Residue pair linked for distance measurement.');
+        if (result.stage === 'linked') {
             prependMeasurementPairNode(result.pair);
+            showToast('Measurement pair created.');
             centerOnMeasurementPair(result.pair);
         } else if (result.stage === 'same') {
-            showToast('Choose a different second residue.', true);
+            showToast('Pick a different second residue.', true);
+        }
+
+        if (result.stage !== 'same') {
+            const actionHint = document.getElementById('actionHint');
+            if (actionHint) actionHint.textContent = 'Left click on residue: zoom. Right click: actions menu.';
         }
 
         scheduleInteractionUiRefresh();
@@ -137,24 +126,20 @@ function handleResidueListSelection(mod) {
     scheduleResidueFocus(mod);
 }
 
+function handlePairFocus(pair) {
+    centerOnMeasurementPair(pair);
+}
+
+function handleResidueListSelection(mod) {
+    closeResidueContextMenu();
+    scheduleResidueFocus(mod);
+}
+
 function handlePairUnlink(pairId) {
     const didUnlink = unlinkMeasurementPair(pairId);
     if (didUnlink) removeMeasurementPairNode(pairId);
     scheduleInteractionUiRefresh();
     if (didUnlink) showToast('Measurement pair unlinked.');
-}
-
-function bindEngineSelector() {
-    document.getElementById('engineSelect').addEventListener('change', (event) => {
-        const nextEngine = event.target.value;
-        if (appState.currentEngine !== nextEngine) destroyEngine(appState.currentEngine);
-
-        appState.currentEngine = nextEngine;
-        syncOpacityControlVisibility();
-        syncEnginePanels();
-
-        if (appState.structureDataText) renderActiveEngine();
-    });
 }
 
 function bindStructureLoader() {
@@ -196,14 +181,9 @@ function bindStructureLoader() {
 
             appState.structureDataText = await response.text();
 
-            // Yield once to keep the UI responsive before cache generation starts.
-            await new Promise((resolve) => setTimeout(resolve, 0));
-            buildResidueCache(appState.structureDataText);
-
             if (appState.modifications.length > 0) {
                 hydrateModifications();
                 generateDOMList();
-                warmupModificationDataInBackground();
                 scheduleInteractionUiRefresh();
             }
 
@@ -248,7 +228,6 @@ function bindJsonLoader() {
                 hydrateModifications();
                 generateDOMList();
                 updateCurrentEngineStyles();
-                warmupModificationDataInBackground();
                 scheduleInteractionUiRefresh();
                 showToast(`Loaded ${appState.modifications.length} modifications.`);
             } finally {
@@ -303,12 +282,6 @@ function bindFilterControls() {
         applyFilters();
     });
 
-    document.getElementById('toggleUnknown').addEventListener('change', () => {
-        if (appState.modifications.length === 0) return;
-        applyFilters();
-        updateCurrentEngineStyles();
-    });
-
     document.getElementById('sortMode').addEventListener('change', function onSortChange() {
         setSortMode(this.value);
         generateDOMList();
@@ -316,25 +289,155 @@ function bindFilterControls() {
     });
 }
 
-function bindInteractionTools() {
-    document.getElementById('modeNavigateBtn').addEventListener('click', () => {
-        setInteractionMode('navigate');
+function bindColorModeControl() {
+    const colorModeToggle = document.getElementById('colorModeToggle');
+    const colorModeLabel = document.getElementById('colorModeLabel');
+    if (!colorModeToggle || !colorModeLabel) return;
+
+    colorModeToggle.checked = appState.colorMode === 'global';
+    colorModeLabel.textContent = colorModeToggle.checked ? 'Global' : 'Analytic';
+
+    colorModeToggle.addEventListener('change', () => {
+        const nextMode = colorModeToggle.checked ? 'global' : 'analytic';
+        applyColorModeToModifications(nextMode);
+        syncOverlayColorsToActiveMode();
+        renderLegend();
+        colorModeLabel.textContent = colorModeToggle.checked ? 'Global' : 'Analytic';
+
+        if (appState.modifications.length > 0) {
+            generateDOMList();
+            updateCurrentEngineStyles();
+            scheduleInteractionUiRefresh();
+        }
+    });
+}
+
+function syncOverlayColorsToActiveMode() {
+    const modByKey = new Map();
+    appState.modifications.forEach((mod) => {
+        modByKey.set(`${mod.resi}|${mod._authChain}`, mod);
     });
 
-    document.getElementById('modeLabelBtn').addEventListener('click', () => {
-        setInteractionMode('label');
+    const recoloredManualLabels = new Map();
+    appState.manualLabels.forEach((label, key) => {
+        const mod = modByKey.get(key);
+        if (mod && mod._labelPayload) {
+            recoloredManualLabels.set(key, { ...mod._labelPayload });
+            return;
+        }
+        recoloredManualLabels.set(key, label);
     });
+    appState.manualLabels = recoloredManualLabels;
 
-    document.getElementById('modeMeasureBtn').addEventListener('click', () => {
-        setInteractionMode('measure');
+    appState.measurementPairs = appState.measurementPairs.map((pair) => {
+        const keyA = `${pair.a.residue}|${pair.a.authChain}`;
+        const keyB = `${pair.b.residue}|${pair.b.authChain}`;
+        const modA = modByKey.get(keyA);
+        const modB = modByKey.get(keyB);
+
+        return {
+            ...pair,
+            a: {
+                ...pair.a,
+                colorHex: modA ? modA._palette.hex : pair.a.colorHex
+            },
+            b: {
+                ...pair.b,
+                colorHex: modB ? modB._palette.hex : pair.b.colorHex
+            }
+        };
     });
+}
 
+function bindLabelTools() {
     document.getElementById('clearLabelsBtn').addEventListener('click', () => {
         const changed = clearManualResidueLabels({ skipRender: true });
         scheduleInteractionUiRefresh();
         if (changed) updateCurrentEngineStyles({ mode: 'overlay' });
         showToast('All manual residue labels removed.');
     });
+}
+
+function bindResidueContextMenu() {
+    const menu = document.getElementById('residueContextMenu');
+    const insertLabelBtn = document.getElementById('menuInsertLabelBtn');
+    const startMeasureBtn = document.getElementById('menuStartMeasureBtn');
+    const viewer = document.getElementById('gldiv-3dmol');
+
+    if (!menu || !insertLabelBtn || !startMeasureBtn || !viewer) return;
+
+    viewer.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
+
+    insertLabelBtn.addEventListener('click', () => {
+        if (!contextMenuResidue) return;
+
+        toggleManualResidueLabel(contextMenuResidue);
+        closeResidueContextMenu();
+        updateCurrentEngineStyles({ mode: 'overlay' });
+        scheduleInteractionUiRefresh();
+    });
+
+    startMeasureBtn.addEventListener('click', () => {
+        if (!contextMenuResidue) return;
+
+        clearMeasurementSelection({ skipRender: true });
+        const result = selectResidueForMeasurement(contextMenuResidue);
+        closeResidueContextMenu();
+
+        if (result.stage === 'first') {
+            const actionHint = document.getElementById('actionHint');
+            if (actionHint) {
+                actionHint.textContent = `Measuring from ${result.changed ? contextMenuResidue.chain : ''}:${contextMenuResidue.resi}. Click second residue in viewer.`;
+            }
+            showToast('First residue selected. Click the second residue in the viewer.');
+        }
+
+        scheduleInteractionUiRefresh();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!menu.classList.contains('open')) return;
+        if (event.target.closest('#residueContextMenu')) return;
+        closeResidueContextMenu();
+    });
+}
+
+function openResidueContextMenu(mod, clientX, clientY) {
+    const menu = document.getElementById('residueContextMenu');
+    const insertLabelBtn = document.getElementById('menuInsertLabelBtn');
+    if (!menu || !mod) return;
+
+    contextMenuResidue = mod;
+
+    if (insertLabelBtn) {
+        const residueKey = `${mod.resi}|${mod._authChain}`;
+        const hasLabel = appState.manualLabels.has(residueKey);
+        insertLabelBtn.textContent = hasLabel ? 'Remove Label' : 'Add Label';
+    }
+
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+
+    const fallbackX = window.innerWidth / 2;
+    const fallbackY = window.innerHeight / 2;
+    const x = Number.isFinite(clientX) ? clientX : fallbackX;
+    const y = Number.isFinite(clientY) ? clientY : fallbackY;
+
+    const maxX = window.innerWidth - menu.offsetWidth - 8;
+    const maxY = window.innerHeight - menu.offsetHeight - 8;
+    menu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
+}
+
+function closeResidueContextMenu() {
+    const menu = document.getElementById('residueContextMenu');
+    if (!menu) return;
+
+    contextMenuResidue = null;
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
 }
 
 function bindSidebarToggle() {
@@ -344,23 +447,77 @@ function bindSidebarToggle() {
 
     toggleButton.addEventListener('click', () => {
         const collapsed = workspace.classList.toggle('sidebar-collapsed');
-        toggleButton.textContent = collapsed ? '◀' : '▶';
         toggleButton.setAttribute('aria-expanded', String(!collapsed));
         toggleButton.title = collapsed ? 'Expand right panel' : 'Collapse right panel';
+        toggleButton.classList.toggle('is-collapsed', collapsed);
     });
 }
 
 function bindLegendControls() {
-    document.getElementById('legendToggle').addEventListener('click', function onLegendToggle() {
-        const body = document.getElementById('legendBody');
-        const collapsed = body.classList.toggle('collapsed');
-        this.textContent = `LEGEND ${collapsed ? '▼' : '▲'}`;
-    });
+    const panel = document.getElementById('legendPanel');
+    const body = document.getElementById('legendBody');
+    const miniButton = document.getElementById('legendMiniBtn');
+    const closeButton = document.getElementById('legendToggle');
+
+    if (!panel || !body || !miniButton || !closeButton) return;
+
+    function setLegendExpanded(expanded) {
+        body.classList.toggle('collapsed', !expanded);
+        panel.classList.toggle('expanded', expanded);
+        closeButton.setAttribute('aria-expanded', String(expanded));
+    }
+
+    miniButton.addEventListener('click', () => setLegendExpanded(true));
+    closeButton.addEventListener('click', () => setLegendExpanded(false));
 
     document.addEventListener('keydown', (event) => {
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
-        if (event.key === 'l' || event.key === 'L') document.getElementById('legendToggle').click();
+        if (event.key === 'l' || event.key === 'L') setLegendExpanded(body.classList.contains('collapsed'));
     });
+}
+
+function renderLegendRows(sectionTitle, rows) {
+    const title = `<div class="legend-section-title">${sectionTitle}</div>`;
+    const body = rows
+        .map((row) => `<div class="legend-row"><span class="lswatch" style="--c:${row.color}"></span>${row.label}</div>`)
+        .join('');
+
+    return `${title}${body}`;
+}
+
+function renderLegend() {
+    const legendBody = document.getElementById('legendBody');
+    if (!legendBody) return;
+
+    const chainRows = [
+        { label: '28S rRNA', color: '#555555' },
+        { label: '18S rRNA', color: '#E6E6E6' },
+        { label: '5.8S rRNA', color: '#FFD700' },
+        { label: '5S rRNA', color: '#4169E1' },
+        { label: 'tRNA', color: '#90EE90' }
+    ];
+
+    const analyticRows = [
+        { label: 'Standard', color: modPalette.standard.hex },
+        { label: '\u03a8 (Domain I)', color: modPalette.varI.hex },
+        { label: 'Ribose (R)', color: modPalette.varR.hex },
+        { label: 'Base (B)', color: modPalette.varB.hex },
+        { label: 'Base+Ribose', color: modPalette.varBR.hex },
+        { label: '\u03a8+Ribose', color: modPalette.varIR.hex },
+        { label: 'Complex (ac, D)', color: modPalette.complex.hex },
+        { label: 'Hyper-Variable', color: modPalette.hyper.hex }
+    ];
+
+    const globalRows = [
+        { label: 'Match', color: statusPalette.match.hex },
+        { label: 'Novel', color: statusPalette.novel.hex },
+        { label: 'Missing', color: statusPalette.missing.hex }
+    ];
+
+    const modeRows = appState.colorMode === 'global' ? globalRows : analyticRows;
+    const modeTitle = appState.colorMode === 'global' ? 'Status (Global View)' : 'Modification Type (Analytic View)';
+
+    legendBody.innerHTML = `${renderLegendRows('RNA Backbones', chainRows)}${renderLegendRows(modeTitle, modeRows)}`;
 }
 
 function bindViewerToggles() {
@@ -369,27 +526,11 @@ function bindViewerToggles() {
             updateCurrentEngineStyles();
         }
     });
-
-    document.getElementById('toggleLabels').addEventListener('change', () => {
-        if (appState.currentEngine !== '3dmol') {
-            showToast('Labels are currently supported only in 3Dmol.', true);
-            document.getElementById('toggleLabels').checked = false;
-            return;
-        }
-        if (!refresh3DmolBaseLabelsOnly()) {
-            updateCurrentEngineStyles();
-        }
-    });
 }
 
 function bindCameraReset() {
     document.getElementById('resetCameraBtn').addEventListener('click', () => {
         const result = resetCameraView();
-        if (!result.ok && result.reason === 'engine') {
-            showToast('Camera reset is currently supported only in 3Dmol.', true);
-            return;
-        }
-
         if (!result.ok && result.reason === 'viewer') {
             showToast('Load a structure before resetting the camera.', true);
         }
@@ -402,61 +543,17 @@ function bindSnapshotExport() {
     });
 }
 
-// Keeps only the active engine layer visible.
-function syncEnginePanels() {
-    supportedEngines.forEach((engineName) => {
-        const layer = document.getElementById(`gldiv-${engineName}`);
-        layer.classList.toggle('active-engine', engineName === appState.currentEngine);
-        layer.classList.toggle('hidden-engine', engineName !== appState.currentEngine);
-    });
-}
-
-function syncOpacityControlVisibility() {
-    document.getElementById('ui-opacity').style.display = appState.currentEngine === 'molstar' ? 'none' : 'flex';
-}
-
-function setInteractionMode(mode) {
-    appState.interactionMode = mode;
-
-    document.getElementById('modeNavigateBtn').classList.toggle('active', mode === 'navigate');
-    document.getElementById('modeLabelBtn').classList.toggle('active', mode === 'label');
-    document.getElementById('modeMeasureBtn').classList.toggle('active', mode === 'measure');
-
-    let didClearMeasurementDraft = false;
-    if (mode !== 'measure') {
-        didClearMeasurementDraft = clearMeasurementSelection({ skipRender: true });
-        clear3DmolResidueHover();
-    }
-
-    const threeDContainer = document.getElementById('gldiv-3dmol');
-    if (threeDContainer) {
-        threeDContainer.style.cursor = mode === 'measure' ? 'crosshair' : 'default';
-    }
-
-    set3DmolMeasureHoverEnabled(mode === 'measure');
-
-    scheduleInteractionUiRefresh();
-
-    if (didClearMeasurementDraft) {
-        updateCurrentEngineStyles({ mode: 'overlay' });
-    }
-}
-
 function updateInteractionPanels() {
     const labelCount = appState.manualLabels.size;
     document.getElementById('labelCount').textContent = `${labelCount}`;
 
-    const modeHint = document.getElementById('modeHint');
-    if (appState.interactionMode === 'label') {
-        modeHint.textContent = 'Label mode: click a residue to toggle a manual label (3Dmol).';
-    } else if (appState.interactionMode === 'measure') {
-        const hasDraft = Boolean(appState.measurementDraft.first);
-        modeHint.textContent = hasDraft
-            ? `Measure mode: selected ${formatResidueTag(appState.measurementDraft.first)}, click a second residue in the 3D viewer to link.`
-            : 'Measure mode: hover/click selectable residues directly in the 3D viewer to create a distance pair (3Dmol).';
-    } else {
-        modeHint.textContent = 'Navigate mode: click a residue to focus it in the active viewer.';
-    }
+    const actionHint = document.getElementById('actionHint');
+    if (!actionHint) return;
+
+    const hasDraft = Boolean(appState.measurementDraft.first);
+    actionHint.textContent = hasDraft
+        ? `Measuring from ${formatResidueTag(appState.measurementDraft.first)}. Click second residue in viewer.`
+        : 'Left click on residue: zoom. Right click: actions menu.';
 }
 
 function formatResidueTag(residueSlot) {

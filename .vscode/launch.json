@@ -8,7 +8,7 @@
         "name": "Launch Edge",
         "request": "launch",
         "type": "msedge",
-        "file": "${workspaceFolder}/index.html",
+        "file": "${workspaceFolder}/3dmol-only/index.html",
             "runtimeArgs": [
                 "--disable-web-security" // Allow CORS
             ]

@@ -9,7 +9,7 @@ let pendingResidueSelectionMod = null;
 let residueModByKey = new Map();
 let previousMarkerState = null;
 
-function scheduleResidueSelection(mod) {
+function scheduleResidueSelection(mod, source = 'list') {
     pendingResidueSelectionMod = mod;
     if (pendingResidueSelectionTimerId) return;
 
@@ -18,12 +18,12 @@ function scheduleResidueSelection(mod) {
         const nextMod = pendingResidueSelectionMod;
         pendingResidueSelectionMod = null;
         if (!nextMod || !onResidueSelected) return;
-        onResidueSelected(nextMod);
+        onResidueSelected(nextMod, source);
     }, 0);
 }
 
 function getResidueKey(mod) {
-    return `${mod['Positions in the Structure']}|${mod._authChain}`;
+    return `${mod.resi}|${mod._authChain}`;
 }
 
 function escapeHtml(value) {
@@ -35,37 +35,15 @@ function escapeHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
-function getMetadataField(mod, keys) {
-    for (const key of keys) {
-        if (Object.prototype.hasOwnProperty.call(mod, key)) return mod[key];
-    }
-    return null;
-}
-
-function normalizeFrequencyValue(value) {
-    if (value === '' || value === undefined || value === null) return null;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return null;
-    return Math.min(1, Math.max(0, parsed));
-}
-
 function hasMetadata(mod) {
-    const refMods = getMetadataField(mod, ['ref_mods', 'refMods']);
-    const confidence = getMetadataField(mod, ['confidence']);
-    const frequency = normalizeFrequencyValue(getMetadataField(mod, ['frequency']));
-    const evidence = getMetadataField(mod, ['evidence']);
-    const source = getMetadataField(mod, ['source']);
-    const xref = getMetadataField(mod, ['xref']);
-    const warnings = getMetadataField(mod, ['warnings']);
-
     return Boolean(
-        (Array.isArray(refMods) && refMods.length > 0)
-        || confidence !== null
-        || frequency !== null
-        || evidence
-        || source
-        || xref
-        || warnings
+        (Array.isArray(mod.ref_mods) && mod.ref_mods.length > 0)
+        || mod.confidence !== null
+        || mod.frequency !== null
+        || mod.evidence
+        || mod.source
+        || mod.xref
+        || mod.warnings
     );
 }
 
@@ -83,24 +61,14 @@ function buildMetadataRow(label, rawValue) {
 }
 
 function buildMetadataMarkup(mod) {
-    if (!hasMetadata(mod)) return '';
-
-    const refMods = getMetadataField(mod, ['ref_mods', 'refMods']);
-    const confidence = getMetadataField(mod, ['confidence']);
-    const frequency = normalizeFrequencyValue(getMetadataField(mod, ['frequency']));
-    const evidence = getMetadataField(mod, ['evidence']);
-    const source = getMetadataField(mod, ['source']);
-    const xref = getMetadataField(mod, ['xref']);
-    const warnings = getMetadataField(mod, ['warnings']);
-
-    const evidenceSource = [evidence, source].filter(Boolean).join(' / ');
+    const evidenceSource = [mod.evidence, mod.source].filter(Boolean).join(' / ');
     const rows = [
-        buildMetadataRow('ref_mods', refMods),
-        buildMetadataRow('confidence', confidence),
-        buildMetadataRow('frequency', frequency !== null ? frequency.toFixed(3) : null),
+        buildMetadataRow('ref_mods', mod.ref_mods),
+        buildMetadataRow('confidence', mod.confidence),
+        buildMetadataRow('frequency', mod.frequency !== null ? mod.frequency.toFixed(3) : null),
         buildMetadataRow('evidence/source', evidenceSource),
-        buildMetadataRow('xref', xref),
-        buildMetadataRow('warnings', warnings)
+        buildMetadataRow('xref', mod.xref),
+        buildMetadataRow('warnings', mod.warnings)
     ].filter(Boolean);
 
     if (!mod._isResolved) {
@@ -170,13 +138,16 @@ function resetMarkerStateCache() {
 }
 
 function getResidueNumber(mod) {
-    const raw = mod['Positions in the Structure'];
+    const raw = mod.resi;
     const numeric = Number(raw);
     return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
 }
 
-function isKnownModification(mod) {
-    return mod['Knwon Positions Modifications'] === 'Y';
+function getStatusRank(status) {
+    if (status === 'match') return 0;
+    if (status === 'novel') return 1;
+    if (status === 'missing') return 2;
+    return 3;
 }
 
 function getSortedModifications() {
@@ -188,15 +159,15 @@ function getSortedModifications() {
             break;
         case 'chain-asc':
             sorted.sort((a, b) => {
-                const chainCompare = String(a['Type Structure']).localeCompare(String(b['Type Structure']));
+                const chainCompare = String(a.chain).localeCompare(String(b.chain));
                 if (chainCompare !== 0) return chainCompare;
                 return getResidueNumber(a) - getResidueNumber(b);
             });
             break;
         case 'mod-first':
             sorted.sort((a, b) => {
-                const knownDiff = Number(isKnownModification(b)) - Number(isKnownModification(a));
-                if (knownDiff !== 0) return knownDiff;
+                const statusDiff = getStatusRank(a.status) - getStatusRank(b.status);
+                if (statusDiff !== 0) return statusDiff;
                 return getResidueNumber(a) - getResidueNumber(b);
             });
             break;
@@ -355,7 +326,9 @@ export function initModListSelectionHandler(selectionCallback) {
         const mod = appState.modifications[item.dataset.idx];
         if (!mod || !onResidueSelected) return;
 
-        scheduleResidueSelection(mod);
+        if (mod._isResolved) {
+            scheduleResidueSelection(mod, 'list');
+        }
     });
 }
 
@@ -385,16 +358,16 @@ export function generateDOMList() {
 
         if (mod._isResolved) {
             item.innerHTML = `
-                <span class="li-resi">${mod['Positions in the Structure']}</span>
-                <span class="li-chain">${mod['Type Structure']}</span>
+                <span class="li-resi">${mod.resi}</span>
+                <span class="li-chain">${mod.chain}</span>
                 <span class="li-mod" title="${mod._displayMod}">${mod._displayMod}</span>
                 ${metadataMarkup}
             `;
         } else {
             item.classList.add('li-absent');
             item.innerHTML = `
-                <span class="li-resi">${mod['Positions in the Structure']}</span>
-                <span class="li-chain">${mod['Type Structure']}</span>
+                <span class="li-resi">${mod.resi}</span>
+                <span class="li-chain">${mod.chain}</span>
                 <span class="li-mod" title="${mod._displayMod}">${mod._displayMod}</span>
                 ${metadataMarkup}
             `;
@@ -411,21 +384,17 @@ export function generateDOMList() {
     applyFilters();
 }
 
-// Applies active search/type/unknown filters without rebuilding the full list.
+// Applies active search/type filters without rebuilding the full list.
 export function applyFilters() {
-    const showUnknown = document.getElementById('toggleUnknown').checked;
     let visibleCount = 0;
 
     appState.modifications.forEach((mod) => {
-        let isVisible = true;
+        const typeMatch = appState.filterType === 'all' || mod.chain === appState.filterType;
+        const queryMatch = !appState.filterQuery || mod._searchStr.includes(appState.filterQuery);
 
-        if (!mod._isResolved && !showUnknown) isVisible = false;
-        if (isVisible && appState.filterType !== 'all' && mod['Type Structure'] !== appState.filterType) isVisible = false;
-        if (isVisible && appState.filterQuery && !mod._searchStr.includes(appState.filterQuery)) isVisible = false;
-
-        if (isVisible) {
+        if (typeMatch && queryMatch) {
             mod._domNode.classList.remove('li-hidden');
-            visibleCount += 1;
+            visibleCount++;
         } else {
             mod._domNode.classList.add('li-hidden');
         }
@@ -447,7 +416,6 @@ export function applyFilters() {
     } else if (emptyMessage) {
         emptyMessage.style.display = 'none';
     }
-
 }
 
 export function setFilterQuery(query) {

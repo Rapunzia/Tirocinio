@@ -13,6 +13,8 @@ let pendingStyleUpdateTimerId = null;
 let pendingStyleUpdateMode = 'full';
 let hoverResidueLabel3Dmol = null;
 let hoveredResidueKey3Dmol = null;
+let pendingHoverRenderRafId3Dmol = null;
+let isMeasureHoverEnabled3Dmol = false;
 let hasBound3DmolPicking = false;
 let on3DmolResiduePicked = null;
 
@@ -358,6 +360,17 @@ function clear3DmolHoverResidue() {
     hoverResidueLabel3Dmol = null;
 }
 
+function requestHoverRender3Dmol() {
+    if (!appState.viewer3Dmol) return;
+    if (pendingHoverRenderRafId3Dmol) return;
+
+    pendingHoverRenderRafId3Dmol = requestAnimationFrame(() => {
+        pendingHoverRenderRafId3Dmol = null;
+        if (!appState.viewer3Dmol) return;
+        appState.viewer3Dmol.render();
+    });
+}
+
 function paint3DmolHoverResidue(mod) {
     if (!appState.viewer3Dmol || !mod) return;
 
@@ -384,15 +397,55 @@ function paint3DmolHoverResidue(mod) {
     );
 
     hoveredResidueKey3Dmol = residueKey;
-    appState.viewer3Dmol.render();
+    requestHoverRender3Dmol();
+}
+
+function handle3DmolHoverIn(atom) {
+    const mod = getSelectableModFromPickedAtom(atom);
+    if (!mod) {
+        if (hoverResidueLabel3Dmol) {
+            clear3DmolHoverResidue();
+            requestHoverRender3Dmol();
+        }
+        return;
+    }
+
+    paint3DmolHoverResidue(mod);
+}
+
+function handle3DmolHoverOut() {
+    if (!hoverResidueLabel3Dmol) return;
+    clear3DmolHoverResidue();
+    requestHoverRender3Dmol();
+}
+
+export function set3DmolMeasureHoverEnabled(enabled) {
+    isMeasureHoverEnabled3Dmol = Boolean(enabled);
+
+    if (!appState.viewer3Dmol) return false;
+
+    if (typeof appState.viewer3Dmol.setHoverDuration === 'function') {
+        // Keep hover immediate in measure mode, relaxed otherwise.
+        appState.viewer3Dmol.setHoverDuration(isMeasureHoverEnabled3Dmol ? 0 : 120);
+    }
+
+    appState.viewer3Dmol.setHoverable(
+        {},
+        isMeasureHoverEnabled3Dmol,
+        handle3DmolHoverIn,
+        handle3DmolHoverOut
+    );
+
+    if (!isMeasureHoverEnabled3Dmol && (hoverResidueLabel3Dmol || hoveredResidueKey3Dmol)) {
+        clear3DmolHoverResidue();
+        requestHoverRender3Dmol();
+    }
+
+    return true;
 }
 
 function bind3DmolResiduePicking() {
     if (!appState.viewer3Dmol || hasBound3DmolPicking) return;
-
-    if (typeof appState.viewer3Dmol.setHoverDuration === 'function') {
-        appState.viewer3Dmol.setHoverDuration(60);
-    }
 
     appState.viewer3Dmol.setClickable({}, true, (atom) => {
         if (appState.interactionMode !== 'measure') return;
@@ -405,35 +458,7 @@ function bind3DmolResiduePicking() {
         }
     });
 
-    appState.viewer3Dmol.setHoverable(
-        {},
-        true,
-        (atom) => {
-            if (appState.interactionMode !== 'measure') {
-                if (hoverResidueLabel3Dmol) {
-                    clear3DmolHoverResidue();
-                    appState.viewer3Dmol.render();
-                }
-                return;
-            }
-
-            const mod = getSelectableModFromPickedAtom(atom);
-            if (!mod) {
-                if (hoverResidueLabel3Dmol) {
-                    clear3DmolHoverResidue();
-                    appState.viewer3Dmol.render();
-                }
-                return;
-            }
-
-            paint3DmolHoverResidue(mod);
-        },
-        () => {
-            if (!hoverResidueLabel3Dmol) return;
-            clear3DmolHoverResidue();
-            appState.viewer3Dmol.render();
-        }
-    );
+    set3DmolMeasureHoverEnabled(appState.interactionMode === 'measure');
 
     hasBound3DmolPicking = true;
 }
@@ -445,7 +470,7 @@ export function set3DmolResiduePickHandler(handler) {
 export function clear3DmolResidueHover() {
     if (!hoverResidueLabel3Dmol && !hoveredResidueKey3Dmol) return false;
     clear3DmolHoverResidue();
-    if (appState.viewer3Dmol) appState.viewer3Dmol.render();
+    requestHoverRender3Dmol();
     return true;
 }
 
@@ -1055,38 +1080,7 @@ function applyNglStyles() {
 export function centerOnResidue(resi, authChain, structId) {
     if (appState.currentEngine === '3dmol' && appState.viewer3Dmol) {
         const selection = { chain: authChain, resi: resi.toString() };
-        const center = getResidueBoundingCenter(resi, authChain);
-
         appState.viewer3Dmol.zoomTo(selection, 750);
-
-        if (focusPulseTimer3Dmol) {
-            clearTimeout(focusPulseTimer3Dmol);
-            focusPulseTimer3Dmol = null;
-        }
-
-        if (focusPulseShape3Dmol) {
-            appState.viewer3Dmol.removeShape(focusPulseShape3Dmol);
-            focusPulseShape3Dmol = null;
-        }
-
-        if (center) {
-            focusPulseShape3Dmol = appState.viewer3Dmol.addSphere({
-                center,
-                radius: 2.2,
-                color: '#ffe066',
-                opacity: 0.42,
-                wireframe: false
-            });
-
-            focusPulseTimer3Dmol = setTimeout(() => {
-                if (!appState.viewer3Dmol || !focusPulseShape3Dmol) return;
-                appState.viewer3Dmol.removeShape(focusPulseShape3Dmol);
-                focusPulseShape3Dmol = null;
-                appState.viewer3Dmol.render();
-            }, 950);
-        }
-
-        appState.viewer3Dmol.render();
         return;
     }
 
@@ -1123,6 +1117,42 @@ export function centerOnResidue(resi, authChain, structId) {
             scale: 1.5
         });
         setTimeout(() => appState.nglComponent && appState.nglComponent.removeRepresentation(highlight), 1600);
+    }
+}
+
+export function centerOnMeasurementPair(pair) {
+    if (appState.currentEngine === '3dmol' && appState.viewer3Dmol) {
+        const selA = { chain: pair.a.authChain, resi: pair.a.residue.toString() };
+        const selB = { chain: pair.b.authChain, resi: pair.b.residue.toString() };
+        appState.viewer3Dmol.zoomTo({ or: [selA, selB] }, 750);
+        return;
+    }
+
+    if (appState.currentEngine === 'molstar' && appState.viewerMolstar) {
+        appState.viewerMolstar.visual.focus([
+            { struct_asym_id: pair.a.authChain, start_residue_number: pair.a.residue, end_residue_number: pair.a.residue },
+            { struct_asym_id: pair.b.authChain, start_residue_number: pair.b.residue, end_residue_number: pair.b.residue }
+        ]);
+        return;
+    }
+
+    if (appState.currentEngine === 'ngl' && appState.viewerNgl && appState.nglComponent) {
+        const selA = `${pair.a.residue}:${pair.a.authChain}`;
+        const selB = `${pair.b.residue}:${pair.b.authChain}`;
+        const selectionObj = new NGL.Selection(`${selA} OR ${selB}`);
+        appState.viewerNgl.animationControls.zoomTo(
+            appState.nglComponent.structure.getView(selectionObj),
+            750
+        );
+        return;
+    }
+    
+    if (appState.currentEngine === 'jsmol' && window.myJmol) {
+        Jmol.script(
+            window.myJmol,
+            `zoomto 1 ((resno=${pair.a.residue} and chain=${pair.a.authChain}) or (resno=${pair.b.residue} and chain=${pair.b.authChain})) 300;`
+        );
+        return;
     }
 }
 
