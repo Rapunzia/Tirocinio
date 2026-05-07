@@ -1,6 +1,6 @@
 import { appState } from '../state.js';
 import { rnaConfig } from '../constants.js';
-import { getModificationsHydrationToken } from '../data/modifications.js';
+import { buildResidueKey, getModificationsHydrationToken } from '../data/modifications.js';
 import { setLoading, finishProgress } from '../ui/loading.js';
 import { showToast } from '../ui/toast.js';
 
@@ -145,10 +145,6 @@ function buildStyleGroups() {
     styleGroupCache3Dmol.key = cacheKey;
     styleGroupCache3Dmol.groups = Object.values(groups);
     return styleGroupCache3Dmol.groups;
-}
-
-function buildResidueKey(residue, authChain) {
-    return `${residue}|${authChain}`;
 }
 
 function getSelectableResidueModMap3Dmol() {

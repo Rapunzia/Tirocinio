@@ -2,7 +2,7 @@ import { appState } from './state.js';
 import { rnaConfig, modPalette, statusPalette } from './constants.js';
 import { showToast } from './ui/toast.js';
 import { setLoading, finishProgress } from './ui/loading.js';
-import { applyColorModeToModifications, hydrateModifications } from './data/modifications.js';
+import { applyColorModeToModifications, getAnalyticLegendRows, hydrateModifications } from './data/modifications.js';
 import {
     applyFilters,
     generateDOMList,
@@ -184,6 +184,7 @@ function bindStructureLoader() {
             if (appState.modifications.length > 0) {
                 hydrateModifications();
                 generateDOMList();
+                renderLegend();
                 scheduleInteractionUiRefresh();
             }
 
@@ -229,6 +230,7 @@ function bindJsonLoader() {
                 generateDOMList();
                 updateCurrentEngineStyles();
                 scheduleInteractionUiRefresh();
+                renderLegend();
                 showToast(`Loaded ${appState.modifications.length} modifications.`);
             } finally {
                 uploadPill.classList.remove('is-working');
@@ -514,8 +516,13 @@ function renderLegend() {
         { label: 'Missing', color: statusPalette.missing.hex }
     ];
 
-    const modeRows = appState.colorMode === 'global' ? globalRows : analyticRows;
-    const modeTitle = appState.colorMode === 'global' ? 'Status (Global View)' : 'Modification Type (Analytic View)';
+    const dynamicAnalyticRows = getAnalyticLegendRows();
+    const modeRows = appState.colorMode === 'global'
+        ? globalRows
+        : (dynamicAnalyticRows || analyticRows);
+    const modeTitle = appState.colorMode === 'global'
+        ? 'Status (Global View)'
+        : (dynamicAnalyticRows ? 'Mod Labels (Analytic View)' : 'Modification Type (Analytic View)');
 
     legendBody.innerHTML = `${renderLegendRows('RNA Backbones', chainRows)}${renderLegendRows(modeTitle, modeRows)}`;
 }

@@ -201,14 +201,16 @@ function createLinkedPairNode(pair) {
     item.dataset.pairId = String(pair.id);
 
     const distanceText = typeof pair.distanceAngstrom === 'number'
-        ? `${pair.distanceAngstrom.toFixed(2)} A`
+        ? `${pair.distanceAngstrom.toFixed(2)} Å`
         : 'Pending distance';
 
     item.innerHTML = `
-        <div
-            class="pair-split-bar"
-            style="--pair-color-a:${pair.a.colorHex}; --pair-color-b:${pair.b.colorHex}"
-        ></div>
+        <div class="pair-meta">
+            <span class="pair-distance">${distanceText}</span>
+            <button class="unlink-pair-btn" type="button" data-pair-id="${pair.id}" aria-label="Unlink pair">
+                &times;
+            </button>
+        </div>
         <div class="pair-half pair-half-a" style="--pair-color:${pair.a.colorHex}">
             <span class="pair-resi">${pair.a.residue}</span>
             <span class="pair-chain">${pair.a.type}</span>
@@ -218,10 +220,6 @@ function createLinkedPairNode(pair) {
             <span class="pair-resi">${pair.b.residue}</span>
             <span class="pair-chain">${pair.b.type}</span>
             <span class="pair-mod" title="${pair.b.display}">${pair.b.display}</span>
-        </div>
-        <div class="pair-meta">
-            <span class="pair-distance">${distanceText}</span>
-            <button class="unlink-pair-btn" type="button" data-pair-id="${pair.id}">Unlink</button>
         </div>
     `;
 
@@ -356,22 +354,16 @@ export function generateDOMList() {
 
         const metadataMarkup = buildMetadataMarkup(mod);
 
-        if (mod._isResolved) {
-            item.innerHTML = `
-                <span class="li-resi">${mod.resi}</span>
-                <span class="li-chain">${mod.chain}</span>
-                <span class="li-mod" title="${mod._displayMod}">${mod._displayMod}</span>
-                ${metadataMarkup}
-            `;
-        } else {
+        if (!mod._isResolved) {
             item.classList.add('li-absent');
-            item.innerHTML = `
-                <span class="li-resi">${mod.resi}</span>
-                <span class="li-chain">${mod.chain}</span>
-                <span class="li-mod" title="${mod._displayMod}">${mod._displayMod}</span>
-                ${metadataMarkup}
-            `;
         }
+
+        item.innerHTML = `
+            <span class="li-resi">${mod._displayResi}</span>
+            <span class="li-chain">${mod.chain}</span>
+            <span class="li-mod" title="${mod._displayMod}">${mod._displayMod}</span>
+            ${metadataMarkup}
+        `;
 
         mod._domNode = item;
         applyInteractionMarkersForItem(mod);
