@@ -38,6 +38,7 @@ let pendingFocusRequest = null;
 let focusRequestTimerId = null;
 let pendingInteractionUiTimerId = null;
 let contextMenuResidue = null;
+let pendingOpacityCommit = false;
 
 function waitNextFrame() {
     return new Promise((resolve) => {
@@ -54,6 +55,17 @@ function scheduleInteractionUiRefresh() {
         pendingInteractionUiTimerId = null;
         refreshInteractionMarkers();
         updateInteractionPanels();
+    }, 0);
+}
+
+function runRenderTask(task, message) {
+    setLoading(true, message);
+    setTimeout(() => {
+        try {
+            task();
+        } finally {
+            finishProgress();
+        }
     }, 0);
 }
 
@@ -243,30 +255,19 @@ function bindJsonLoader() {
 
 function bindOpacitySlider() {
     const slider = document.getElementById('opacitySlider');
-    const commitOpacityUpdate = () => {
-        if (opacityUpdateTimerId) return;
-        opacityUpdateTimerId = setTimeout(() => {
-            opacityUpdateTimerId = null;
-            if (!refresh3DmolProteinsOnly()) {
-                updateCurrentEngineStyles();
-            }
-        }, 75);
-    };
-
     slider.addEventListener('input', function onOpacityInput() {
         appState.currentOpacity = parseFloat(this.value);
         document.getElementById('opacityVal').textContent = appState.currentOpacity.toFixed(2);
-        commitOpacityUpdate();
+        pendingOpacityCommit = true;
     });
 
     slider.addEventListener('change', () => {
-        if (opacityUpdateTimerId) {
-            clearTimeout(opacityUpdateTimerId);
-            opacityUpdateTimerId = null;
-        }
-        if (!refresh3DmolProteinsOnly()) {
-            updateCurrentEngineStyles();
-        }
+        pendingOpacityCommit = false;
+        runRenderTask(() => {
+            if (!refresh3DmolProteinsOnly()) {
+                updateCurrentEngineStyles();
+            }
+        }, 'Updating opacity...');
     });
 }
 
@@ -529,9 +530,11 @@ function renderLegend() {
 
 function bindViewerToggles() {
     document.getElementById('toggleProteins').addEventListener('change', () => {
-        if (!refresh3DmolProteinsOnly()) {
-            updateCurrentEngineStyles();
-        }
+        runRenderTask(() => {
+            if (!refresh3DmolProteinsOnly()) {
+                updateCurrentEngineStyles();
+            }
+        }, 'Updating proteins...');
     });
 }
 
