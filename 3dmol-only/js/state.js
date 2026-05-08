@@ -8,6 +8,12 @@ export const appState = {
     currentOpacity: 0.85,
     selectedListItem: null,
 
+    ui: {
+        activePanel: null,
+        isLoadOverlayOpen: true,
+        isHelpOpen: false
+    },
+
     viewer3Dmol: null,
 
     filterQuery: '',

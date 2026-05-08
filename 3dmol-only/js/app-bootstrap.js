@@ -39,6 +39,7 @@ let focusRequestTimerId = null;
 let pendingInteractionUiTimerId = null;
 let contextMenuResidue = null;
 let pendingOpacityCommit = false;
+let setLegendExpandedHandler = null;
 
 function waitNextFrame() {
     return new Promise((resolve) => {
@@ -76,6 +77,10 @@ export function initializeApp() {
     setMeasurementPairSelectionHandler(handlePairFocus);
     set3DmolResiduePickHandler(handleViewerResiduePick);
 
+    bindLoadOverlayControls();
+    bindLeftSidebarPanels();
+    bindHelpButton();
+    bindSaveSession();
     bindStructureLoader();
     bindJsonLoader();
     bindOpacitySlider();
@@ -208,6 +213,98 @@ function bindStructureLoader() {
         } finally {
             setLoadButtonWorking(false);
         }
+    });
+}
+
+function bindLoadOverlayControls() {
+    const modal = document.getElementById('zeroStateModal');
+    const openButton = document.getElementById('openLoadOverlayBtn');
+    const closeButton = document.getElementById('closeLoadOverlayBtn');
+    const loadButton = document.getElementById('loadCifBtn');
+
+    if (!modal || !loadButton) return;
+
+    function setOverlayOpen(isOpen) {
+        modal.classList.toggle('overlay-hidden', !isOpen);
+        appState.ui.isLoadOverlayOpen = isOpen;
+    }
+
+    if (openButton) {
+        openButton.addEventListener('click', () => setOverlayOpen(true));
+    }
+
+    if (closeButton) {
+        closeButton.addEventListener('click', () => setOverlayOpen(false));
+    }
+
+    const observer = new MutationObserver(() => {
+        if (!loadButton.classList.contains('is-working')) {
+            setTimeout(() => setOverlayOpen(false), 500);
+        }
+    });
+    observer.observe(loadButton, { attributes: true, attributeFilter: ['class'] });
+}
+
+function bindLeftSidebarPanels() {
+    const panelButtons = document.querySelectorAll('[data-panel-target]');
+    const closeButtons = document.querySelectorAll('[data-panel-close]');
+    const panels = {
+        scene: document.getElementById('scenePanel'),
+        style: document.getElementById('stylePanel')
+    };
+
+    function setActivePanel(panelName) {
+        Object.entries(panels).forEach(([key, panel]) => {
+            if (!panel) return;
+            const isActive = key === panelName;
+            panel.classList.toggle('panel-open', isActive);
+            panel.setAttribute('aria-hidden', String(!isActive));
+        });
+
+        panelButtons.forEach((button) => {
+            const isActive = button.dataset.panelTarget === panelName;
+            button.classList.toggle('is-active', isActive);
+        });
+
+        appState.ui.activePanel = panelName;
+    }
+
+    panelButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const target = button.dataset.panelTarget;
+            if (!target) return;
+            if (appState.ui.activePanel === target) {
+                setActivePanel(null);
+                return;
+            }
+            setActivePanel(target);
+        });
+    });
+
+    closeButtons.forEach((button) => {
+        button.addEventListener('click', () => setActivePanel(null));
+    });
+}
+
+function bindHelpButton() {
+    const helpButton = document.getElementById('helpBtn');
+    const legendBody = document.getElementById('legendBody');
+    if (!helpButton || !legendBody) return;
+
+    helpButton.addEventListener('click', () => {
+        const shouldExpand = legendBody.classList.contains('collapsed');
+        if (setLegendExpandedHandler) {
+            setLegendExpandedHandler(shouldExpand);
+        }
+        appState.ui.isHelpOpen = shouldExpand;
+    });
+}
+
+function bindSaveSession() {
+    const saveButton = document.getElementById('saveSessionBtn');
+    if (!saveButton) return;
+    saveButton.addEventListener('click', () => {
+        showToast('Save session is not configured yet.', true);
     });
 }
 
@@ -444,7 +541,7 @@ function closeResidueContextMenu() {
 }
 
 function bindSidebarToggle() {
-    const toggleButton = document.getElementById('sidebarToggleBtn');
+    const toggleButton = document.getElementById('inspectorEar');
     const workspace = document.getElementById('workspaceLayout');
     if (!toggleButton || !workspace) return;
 
@@ -452,27 +549,26 @@ function bindSidebarToggle() {
         const collapsed = workspace.classList.toggle('sidebar-collapsed');
         toggleButton.setAttribute('aria-expanded', String(!collapsed));
         toggleButton.title = collapsed ? 'Expand right panel' : 'Collapse right panel';
-        toggleButton.classList.toggle('is-collapsed', collapsed);
+        const icon = toggleButton.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-left', collapsed);
+            icon.classList.toggle('fa-chevron-right', !collapsed);
+        }
     });
 }
 
 function bindLegendControls() {
-    const panel = document.getElementById('legendPanel');
     const body = document.getElementById('legendBody');
-    const miniButton = document.getElementById('legendMiniBtn');
-    const closeButton = document.getElementById('legendToggle');
+    const helpButton = document.getElementById('helpBtn');
 
-    if (!panel || !body || !miniButton || !closeButton) return;
+    if (!body || !helpButton) return;
 
     function setLegendExpanded(expanded) {
         body.classList.toggle('collapsed', !expanded);
-        panel.classList.toggle('expanded', expanded);
-        closeButton.setAttribute('aria-expanded', String(expanded));
+        helpButton.classList.toggle('expanded', expanded);
     }
 
-    miniButton.addEventListener('click', () => setLegendExpanded(true));
-    closeButton.addEventListener('click', () => setLegendExpanded(false));
-
+    setLegendExpandedHandler = setLegendExpanded;
     document.addEventListener('keydown', (event) => {
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
         if (event.key === 'l' || event.key === 'L') setLegendExpanded(body.classList.contains('collapsed'));

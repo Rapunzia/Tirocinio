@@ -25,6 +25,9 @@
     </script>
     <!-- Google Fonts for Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
     
     <!-- 3Dmol -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
@@ -42,6 +45,7 @@
     <!-- ZERO STATE MODAL (Centered Glassmorphism Modal) -->
     <div id="zeroStateModal" class="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-lg transition-opacity duration-500">
         <div class="glass-panel w-[400px] p-8 flex flex-col items-center gap-6 rounded-3xl shadow-2xl relative overflow-hidden">
+            <button id="closeLoadOverlayBtn" class="overlay-close-btn" type="button" aria-label="Close loader">&times;</button>
             <!-- decorative ambient glow -->
             <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/20 blur-3xl rounded-full pointer-events-none"></div>
             
@@ -79,107 +83,132 @@
 
     <!-- MAIN UI LAYER (Shows over 3D after loading starts) -->
     <div id="workspaceLayout" class="absolute inset-0 pointer-events-none z-10 w-full h-full p-4">
-        
-        <!-- TOP CONTROL MODULE -->
-        <div id="controlModule" class="control-module">
-            <div class="control-panel control-panel-left glass-panel">
-                <div class="control-group">
-                    <label id="colorModeWrapper" class="control-item group" title="Analytic/Global Mode">
-                        <span class="control-label">Analytic</span>
-                        <input type="checkbox" id="colorModeToggle" class="hidden peer">
-                        <div class="w-10 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 relative transition-all"></div>
-                        <span id="colorModeLabel" class="control-value">Global</span>
-                    </label>
 
-                    <label class="control-item group" title="Toggle Proteins">
-                        <span class="control-label">Prots</span>
-                        <input type="checkbox" id="toggleProteins" class="hidden peer">
-                        <div class="w-10 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 relative transition-all"></div>
-                    </label>
+        <!-- LEFT ICON SIDEBAR -->
+        <nav id="leftSidebar" class="left-sidebar glass-panel" aria-label="Primary">
+            <button id="openLoadOverlayBtn" class="sidebar-icon-btn" type="button" title="Open loader" aria-label="Open loader">
+                <i class="fa-solid fa-house" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-divider"></div>
+            <button class="sidebar-icon-btn" type="button" data-panel-target="scene" title="Scene" aria-label="Scene">
+                <i class="fa-solid fa-camera" aria-hidden="true"></i>
+            </button>
+            <button class="sidebar-icon-btn" type="button" data-panel-target="style" title="Style" aria-label="Style">
+                <i class="fa-solid fa-palette" aria-hidden="true"></i>
+            </button>
+            <button id="saveSessionBtn" class="sidebar-icon-btn" type="button" title="Save session" aria-label="Save session">
+                <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+            </button>
+        </nav>
 
-                    <div class="control-item control-item-opacity group" title="Opacity">
-                        <span class="control-label">Opacity</span>
-                        <div class="opacity-slider-stack">
-                            <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.85" class="vertical-auto-slider">
-                            <span id="opacityVal" class="control-value">0.85</span>
+        <!-- FLOATING PANELS -->
+        <section id="scenePanel" class="floating-panel" aria-hidden="true">
+            <div class="floating-panel-header">
+                <span>Scene</span>
+                <button class="panel-close-btn" type="button" data-panel-close aria-label="Close">&times;</button>
+            </div>
+            <div class="floating-panel-body">
+                <button id="resetCameraBtn" class="panel-action-btn panel-action-btn-compact" type="button">
+                    <span>Reset camera</span>
+                    <i class="fa-solid fa-crosshairs" aria-hidden="true"></i>
+                </button>
+                <button id="snapshotBtn" class="panel-action-btn panel-action-btn-compact" type="button">
+                    <span>Snapshot</span>
+                    <i class="fa-solid fa-camera-retro" aria-hidden="true"></i>
+                </button>
+                <label class="panel-toggle">
+                    <span>Proteins</span>
+                    <input type="checkbox" id="toggleProteins" class="hidden peer">
+                    <div class="panel-switch"></div>
+                </label>
+            </div>
+        </section>
+
+        <section id="stylePanel" class="floating-panel" aria-hidden="true">
+            <div class="floating-panel-header">
+                <span>Style</span>
+                <button class="panel-close-btn" type="button" data-panel-close aria-label="Close">&times;</button>
+            </div>
+            <div class="floating-panel-body">
+                <label id="colorModeWrapper" class="panel-toggle" title="Analytic/Global Mode">
+                    <span>Color mode</span>
+                    <input type="checkbox" id="colorModeToggle" class="hidden peer">
+                    <div class="panel-switch"></div>
+                    <span id="colorModeLabel" class="panel-value">Global</span>
+                </label>
+                <div class="panel-slider">
+                    <div class="panel-slider-row">
+                        <span>Opacity</span>
+                        <span id="opacityVal" class="panel-value">0.85</span>
+                    </div>
+                    <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.85">
+                </div>
+            </div>
+        </section>
+
+        <!-- LEGEND PANEL -->
+
+        <!-- RIGHT DATA INSPECTOR -->
+        <aside id="dataInspector" class="sidebar absolute top-[20px] right-4 bottom-4 glass-panel rounded-3xl overflow-hidden flex flex-col pointer-events-auto transform transition-transform duration-500 translate-x-0 shadow-2xl z-20">
+            <button id="inspectorEar" class="inspector-ear" type="button" title="Toggle inspector" aria-label="Toggle inspector">
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
+            <div class="inspector-shell">
+                <!-- Header -->
+                <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-white/5 shrink-0">
+                    <h2 class="text-sm font-bold tracking-tight">Inspector</h2>
+                    <div class="bg-blue-500/20 border border-blue-500/30 rounded-full px-3 py-1 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                        <span id="residueCount" class="text-[10px] font-mono font-bold text-blue-300">0</span>
+                    </div>
+                </div>
+
+                <!-- Toolbar / Searches -->
+                <div class="flex flex-col p-4 gap-3 border-b border-white/10 shrink-0">
+                    <div class="relative w-full">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" id="searchInput" placeholder="Search residue, mod..." class="w-full bg-black/20 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 transition-all font-mono">
+                    </div>
+                    <div class="flex gap-2 w-full">
+                        <select id="filterType" class="flex-1 appearance-none bg-black/20 border border-white/10 rounded-lg py-1.5 px-2 text-[10px] uppercase tracking-wider font-semibold text-white/70 focus:outline-none cursor-pointer outline-none">
+                            <option value="all" class="text-black">All</option>
+                            <option value="28S" class="text-black">28S</option>
+                            <option value="18S" class="text-black">18S</option>
+                            <option value="5.8S" class="text-black">5.8S</option>
+                            <option value="5S" class="text-black">5S</option>
+                            <option value="tRNA" class="text-black">tRNA</option>
+                        </select>
+                        <select id="sortMode" class="flex-1 appearance-none bg-black/20 border border-white/10 rounded-lg py-1.5 px-2 text-[10px] uppercase tracking-wider font-semibold text-white/70 focus:outline-none cursor-pointer outline-none text-right">
+                            <option value="resi-asc" class="text-black">Res ↑</option>
+                            <option value="resi-desc" class="text-black">Res ↓</option>
+                            <option value="chain-asc" class="text-black">Chain</option>
+                            <option value="mod-first" class="text-black">Status</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex items-center justify-between mt-1 px-1">
+                        <span class="text-[10px] text-white/40 font-medium" id="actionHint">Click a card to navigate</span>
+                        <div class="flex items-center gap-2">
+                            <span id="labelCount" class="text-[9px] font-mono bg-white/10 px-1.5 py-0.5 rounded text-white/60">0</span>
+                            <button id="clearLabelsBtn" class="text-[9px] uppercase font-bold text-red-400 hover:text-red-300 transition-colors tracking-wider">Clear</button>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="control-panel control-panel-right glass-panel">
-                <div class="control-group control-group-actions">
-                    <button id="legendMiniBtn" class="control-icon-btn" type="button" title="Show Legend" aria-label="Show legend">i</button>
-                    <button id="resetCameraBtn" class="control-icon-btn" title="Reset Camera">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                    </button>
-                    <button id="snapshotBtn" class="control-icon-btn" title="Take Snapshot">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    </button>
-                    <button id="sidebarToggleBtn" class="control-icon-btn control-icon-btn-accent" title="Toggle Inspector">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
-                    </button>
-                </div>
+                <!-- Mod List (Cards based) -->
+                <ul id="modList" class="custom-scrollbar">
+                    <!-- Data populated dynamically via JS -->
+                </ul>
             </div>
-        </div>
+        </aside>
 
-        <!-- LEGEND PANEL -->
-        <div id="legendPanel" class="legend-panel glass-panel">
-            <div class="legend-header">
-                <span class="legend-title">Legend</span>
-                <button id="legendToggle" class="legend-close-btn" type="button" aria-label="Hide legend">Close</button>
+        <button id="helpBtn" class="help-fab glass-panel" type="button" aria-label="Help">
+            <i class="fa-solid fa-question help-fab-icon" aria-hidden="true"></i>
+            <div class="help-fab-header">
+                <span class="help-fab-title">Legend</span>
             </div>
             <div id="legendBody" class="legend-body collapsed"></div>
-        </div>
-
-        <!-- RIGHT DATA INSPECTOR -->
-        <aside id="dataInspector" class="sidebar absolute top-[80px] right-4 bottom-4 w-80 glass-panel rounded-3xl overflow-hidden flex flex-col pointer-events-auto transform transition-transform duration-500 translate-x-0 shadow-2xl z-20">
-            <!-- Header -->
-            <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-white/5 shrink-0">
-                <h2 class="text-sm font-bold tracking-tight">Inspector</h2>
-                <div class="bg-blue-500/20 border border-blue-500/30 rounded-full px-3 py-1 flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-                    <span id="residueCount" class="text-[10px] font-mono font-bold text-blue-300">0</span>
-                </div>
-            </div>
-
-            <!-- Toolbar / Searches -->
-            <div class="flex flex-col p-4 gap-3 border-b border-white/10 shrink-0">
-                <div class="relative w-full">
-                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                    <input type="text" id="searchInput" placeholder="Search residue, mod..." class="w-full bg-black/20 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 transition-all font-mono">
-                </div>
-                <div class="flex gap-2 w-full">
-                    <select id="filterType" class="flex-1 appearance-none bg-black/20 border border-white/10 rounded-lg py-1.5 px-2 text-[10px] uppercase tracking-wider font-semibold text-white/70 focus:outline-none cursor-pointer outline-none">
-                        <option value="all" class="text-black">All</option>
-                        <option value="28S" class="text-black">28S</option>
-                        <option value="18S" class="text-black">18S</option>
-                        <option value="5.8S" class="text-black">5.8S</option>
-                        <option value="5S" class="text-black">5S</option>
-                        <option value="tRNA" class="text-black">tRNA</option>
-                    </select>
-                    <select id="sortMode" class="flex-1 appearance-none bg-black/20 border border-white/10 rounded-lg py-1.5 px-2 text-[10px] uppercase tracking-wider font-semibold text-white/70 focus:outline-none cursor-pointer outline-none text-right">
-                        <option value="resi-asc" class="text-black">Res ↑</option>
-                        <option value="resi-desc" class="text-black">Res ↓</option>
-                        <option value="chain-asc" class="text-black">Chain</option>
-                        <option value="mod-first" class="text-black">Status</option>
-                    </select>
-                </div>
-                
-                <div class="flex items-center justify-between mt-1 px-1">
-                    <span class="text-[10px] text-white/40 font-medium" id="actionHint">Click a card to navigate</span>
-                    <div class="flex items-center gap-2">
-                        <span id="labelCount" class="text-[9px] font-mono bg-white/10 px-1.5 py-0.5 rounded text-white/60">0</span>
-                        <button id="clearLabelsBtn" class="text-[9px] uppercase font-bold text-red-400 hover:text-red-300 transition-colors tracking-wider">Clear</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Mod List (Cards based) -->
-            <ul id="modList" class="custom-scrollbar">
-                <!-- Data populated dynamically via JS -->
-            </ul>
-        </aside>
+        </button>
 
     </div>
 
@@ -204,41 +233,5 @@
     <!-- SCRIPTS -->
     <script type="module" src="app.js"></script>
 
-    <!-- INLINE LOGIC FOR UI MODAL -->
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const modal = document.getElementById('zeroStateModal');
-            const loadBtn = document.getElementById('loadCifBtn');
-            const inspector = document.getElementById('dataInspector');
-            const inspectorToggle = document.getElementById('sidebarToggleBtn');
-
-            // Detect app load transition
-            const observer = new MutationObserver(() => {
-                if (!loadBtn.classList.contains('is-working')) {
-                    // Assume loading is complete
-                    setTimeout(() => {
-                        modal.style.opacity = '0';
-                        modal.style.pointerEvents = 'none';
-                    }, 500);
-                }
-            });
-            observer.observe(loadBtn, { attributes: true, attributeFilter: ['class'] });
-
-            // Inspector Toggle
-            inspectorToggle.addEventListener('click', () => {
-                if (inspector.classList.contains('translate-x-[400px]')) {
-                    inspector.classList.remove('translate-x-[400px]');
-                    inspector.classList.add('translate-x-0');
-                    inspectorToggle.classList.add('bg-blue-500/20');
-                    inspectorToggle.classList.remove('bg-white/5');
-                } else {
-                    inspector.classList.remove('translate-x-0');
-                    inspector.classList.add('translate-x-[400px]');
-                    inspectorToggle.classList.remove('bg-blue-500/20');
-                    inspectorToggle.classList.add('bg-white/5');
-                }
-            });
-        });
-    </script>
 </body>
 </html>
