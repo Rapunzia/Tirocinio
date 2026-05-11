@@ -40,6 +40,11 @@ let pendingInteractionUiTimerId = null;
 let contextMenuResidue = null;
 let pendingOpacityCommit = false;
 let setLegendExpandedHandler = null;
+let overlayCloseTimerId = null;
+let uploadMode = 'resume';
+let sessionData = null;
+let sequenceData = null;
+let modificationData = null;
 
 function waitNextFrame() {
     return new Promise((resolve) => {
@@ -82,7 +87,8 @@ export function initializeApp() {
     bindHelpButton();
     bindSaveSession();
     bindStructureLoader();
-    bindJsonLoader();
+    bindUploadModeControls();
+    bindUploadDropzones();
     bindOpacitySlider();
     bindColorModeControl();
     bindFilterControls();
@@ -92,8 +98,10 @@ export function initializeApp() {
     bindViewerToggles();
     bindCameraReset();
     bindSnapshotExport();
+    bindPymolExport();
     bindResidueContextMenu();
     renderLegend();
+    updateRenderButtonState();
 }
 
 function scheduleResidueFocus(mod) {
@@ -182,8 +190,33 @@ function bindStructureLoader() {
     }
 
     loadButton.addEventListener('click', async () => {
+        if (!isRenderReady()) {
+            showToast('Add the required files before rendering.', true);
+            return;
+        }
+
         setLoadButtonWorking(true);
         await waitNextFrame();
+
+        const uploadPayload = {
+            mode: uploadMode,
+            sessionData,
+            sequenceData,
+            modificationData
+        };
+
+        if (uploadMode === 'resume') {
+            const applied = await applySessionData(uploadPayload.sessionData);
+            if (!applied) {
+                setLoadButtonWorking(false);
+                return;
+            }
+        } else {
+            appState.modifications = [];
+            appState.manualLabels.clear();
+            clearMeasurementSelection({ skipRender: true });
+            clearAllMeasurementPairs({ skipRender: true });
+        }
 
         const selectedRibo = document.getElementById('riboSelect').value;
         const config = rnaConfig[selectedRibo];
@@ -200,6 +233,7 @@ function bindStructureLoader() {
 
             if (appState.modifications.length > 0) {
                 hydrateModifications();
+                syncColorModeControl();
                 generateDOMList();
                 renderLegend();
                 scheduleInteractionUiRefresh();
@@ -216,6 +250,202 @@ function bindStructureLoader() {
     });
 }
 
+function bindUploadModeControls() {
+    const toggle = document.getElementById('uploadModeToggle');
+    if (!toggle) return;
+
+    toggle.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-mode]');
+        if (!button) return;
+        setUploadMode(button.dataset.mode === 'new' ? 'new' : 'resume');
+    });
+
+    setUploadMode(uploadMode);
+}
+
+function bindUploadDropzones() {
+    const sessionDropzone = document.getElementById('sessionDropzone');
+    const sessionInput = document.getElementById('sessionFileInput');
+    const newDropzone = document.getElementById('newDropzone');
+    const newInput = document.getElementById('newFilesInput');
+
+    if (sessionDropzone && sessionInput) {
+        wireDropzone(sessionDropzone, sessionInput, 'resume');
+    }
+
+    if (newDropzone && newInput) {
+        wireDropzone(newDropzone, newInput, 'new');
+    }
+}
+
+function wireDropzone(dropzone, input, mode) {
+    dropzone.addEventListener('click', () => input.click());
+
+    dropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        dropzone.classList.add('is-dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('is-dragover');
+    });
+
+    dropzone.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        dropzone.classList.remove('is-dragover');
+        await handleFiles(event.dataTransfer?.files, mode);
+    });
+
+    input.addEventListener('change', async (event) => {
+        await handleFiles(event.target.files, mode);
+        input.value = '';
+    });
+}
+
+async function handleFiles(fileList, mode) {
+    if (!fileList || fileList.length === 0) return;
+
+    const tasks = [];
+    Array.from(fileList).forEach((file) => {
+        const ext = getFileExtension(file.name);
+        if (mode === 'resume') {
+            if (ext !== 'json') {
+                showToast('Resume Session accepts only .json files.', true);
+                return;
+            }
+            tasks.push(assignFileData('session', file));
+            return;
+        }
+
+        if (ext === 'fasta') {
+            tasks.push(assignFileData('sequence', file));
+            return;
+        }
+
+        if (ext === 'csv') {
+            tasks.push(assignFileData('modification', file));
+            return;
+        }
+
+        showToast('New Session accepts only .fasta and .csv files.', true);
+    });
+
+    await Promise.all(tasks);
+    renderFileChips();
+    updateRenderButtonState();
+}
+
+function getFileExtension(fileName) {
+    const lastDot = fileName.lastIndexOf('.');
+    if (lastDot === -1) return '';
+    return fileName.slice(lastDot + 1).trim().toLowerCase();
+}
+
+async function assignFileData(kind, file) {
+    const text = await readFileAsText(file);
+
+    if (kind === 'session') {
+        sessionData = { file, text };
+    } else if (kind === 'sequence') {
+        sequenceData = { file, text };
+    } else if (kind === 'modification') {
+        modificationData = { file, text };
+    }
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(String(event.target.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read file.'));
+        reader.readAsText(file);
+    });
+}
+
+async function applySessionData(sessionPayload) {
+    if (!sessionPayload || !sessionPayload.text) {
+        showToast('No session file loaded.', true);
+        return false;
+    }
+
+    try {
+        const parsed = JSON.parse(sessionPayload.text);
+        if (!Array.isArray(parsed)) throw new Error('Expected JSON array.');
+        appState.modifications = parsed;
+        appState.manualLabels.clear();
+        clearMeasurementSelection({ skipRender: true });
+        clearAllMeasurementPairs({ skipRender: true });
+        return true;
+    } catch (error) {
+        showToast('Invalid JSON session file.', true);
+        return false;
+    }
+}
+
+function renderFileChips() {
+    const sessionChips = document.getElementById('sessionChips');
+    const newChips = document.getElementById('newChips');
+
+    if (sessionChips) {
+        sessionChips.innerHTML = sessionData
+            ? buildFileChip(sessionData.file.name, 'fa-file-code')
+            : '';
+    }
+
+    if (newChips) {
+        const chips = [];
+        if (sequenceData) chips.push(buildFileChip(sequenceData.file.name, 'fa-dna'));
+        if (modificationData) chips.push(buildFileChip(modificationData.file.name, 'fa-table'));
+        newChips.innerHTML = chips.join('');
+    }
+}
+
+function buildFileChip(fileName, iconClass) {
+    return `<span class="file-chip"><i class="fa-solid ${iconClass}" aria-hidden="true"></i>${escapeHtml(fileName)}</span>`;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function setUploadMode(nextMode) {
+    uploadMode = nextMode === 'new' ? 'new' : 'resume';
+    const toggle = document.getElementById('uploadModeToggle');
+    const resumePanel = document.getElementById('resumePanel');
+    const newPanel = document.getElementById('newPanel');
+    const options = document.querySelectorAll('#uploadModeToggle [data-mode]');
+
+    if (toggle) toggle.dataset.active = uploadMode;
+    if (resumePanel) resumePanel.classList.toggle('is-active', uploadMode === 'resume');
+    if (newPanel) newPanel.classList.toggle('is-active', uploadMode === 'new');
+
+    options.forEach((button) => {
+        const isActive = button.dataset.mode === uploadMode;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-selected', String(isActive));
+    });
+
+    updateRenderButtonState();
+}
+
+function isRenderReady() {
+    if (uploadMode === 'resume') return Boolean(sessionData);
+    return Boolean(sequenceData && modificationData);
+}
+
+function updateRenderButtonState() {
+    const loadButton = document.getElementById('loadCifBtn');
+    if (!loadButton) return;
+    const isReady = isRenderReady();
+    loadButton.disabled = !isReady;
+    loadButton.setAttribute('aria-disabled', String(!isReady));
+}
+
 function bindLoadOverlayControls() {
     const modal = document.getElementById('zeroStateModal');
     const openButton = document.getElementById('openLoadOverlayBtn');
@@ -225,7 +455,20 @@ function bindLoadOverlayControls() {
     if (!modal || !loadButton) return;
 
     function setOverlayOpen(isOpen) {
-        modal.classList.toggle('overlay-hidden', !isOpen);
+        if (overlayCloseTimerId) {
+            clearTimeout(overlayCloseTimerId);
+            overlayCloseTimerId = null;
+        }
+
+        if (isOpen) {
+            modal.classList.remove('overlay-hidden', 'overlay-invisible');
+        } else {
+            modal.classList.add('overlay-hidden');
+            overlayCloseTimerId = setTimeout(() => {
+                modal.classList.add('overlay-invisible');
+                overlayCloseTimerId = null;
+            }, 500);
+        }
         appState.ui.isLoadOverlayOpen = isOpen;
     }
 
@@ -249,8 +492,8 @@ function bindLeftSidebarPanels() {
     const panelButtons = document.querySelectorAll('[data-panel-target]');
     const closeButtons = document.querySelectorAll('[data-panel-close]');
     const panels = {
-        scene: document.getElementById('scenePanel'),
-        style: document.getElementById('stylePanel')
+        style: document.getElementById('stylePanel'),
+        export: document.getElementById('exportPanel')
     };
 
     function setActivePanel(panelName) {
@@ -304,49 +547,7 @@ function bindSaveSession() {
     const saveButton = document.getElementById('saveSessionBtn');
     if (!saveButton) return;
     saveButton.addEventListener('click', () => {
-        showToast('Save session is not configured yet.', true);
-    });
-}
-
-function bindJsonLoader() {
-    const uploadPill = document.getElementById('uploadPill');
-
-    document.getElementById('jsonFile').addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        document.getElementById('fileNameDisplay').textContent = truncateFileName(file.name);
-
-        const reader = new FileReader();
-        reader.onload = async (loadEvent) => {
-            uploadPill.classList.add('is-working');
-            await waitNextFrame();
-
-            try {
-                try {
-                    const parsed = JSON.parse(loadEvent.target.result);
-                    if (!Array.isArray(parsed)) throw new Error('Expected JSON array.');
-                    appState.modifications = parsed;
-                    appState.manualLabels.clear();
-                    clearMeasurementSelection({ skipRender: true });
-                    clearAllMeasurementPairs({ skipRender: true });
-                } catch (error) {
-                    showToast('Invalid JSON file.', true);
-                    return;
-                }
-
-                hydrateModifications();
-                generateDOMList();
-                updateCurrentEngineStyles();
-                scheduleInteractionUiRefresh();
-                renderLegend();
-                showToast(`Loaded ${appState.modifications.length} modifications.`);
-            } finally {
-                uploadPill.classList.remove('is-working');
-            }
-        };
-
-        reader.readAsText(file);
+        exportSessionJson();
     });
 }
 
@@ -367,6 +568,7 @@ function bindOpacitySlider() {
         }, 'Updating opacity...');
     });
 }
+
 
 function bindFilterControls() {
     document.getElementById('searchInput').addEventListener('input', function onSearchInput() {
@@ -390,19 +592,13 @@ function bindFilterControls() {
 }
 
 function bindColorModeControl() {
-    const colorModeToggle = document.getElementById('colorModeToggle');
-    const colorModeLabel = document.getElementById('colorModeLabel');
-    if (!colorModeToggle || !colorModeLabel) return;
+    const colorModeSelect = document.getElementById('colorModeSelect');
+    if (!colorModeSelect) return;
 
-    colorModeToggle.checked = appState.colorMode === 'global';
-    colorModeLabel.textContent = colorModeToggle.checked ? 'Global' : 'Analytic';
-
-    colorModeToggle.addEventListener('change', () => {
-        const nextMode = colorModeToggle.checked ? 'global' : 'analytic';
-        applyColorModeToModifications(nextMode);
+    colorModeSelect.addEventListener('change', () => {
+        applyColorModeToModifications(colorModeSelect.value);
         syncOverlayColorsToActiveMode();
         renderLegend();
-        colorModeLabel.textContent = colorModeToggle.checked ? 'Global' : 'Analytic';
 
         if (appState.modifications.length > 0) {
             generateDOMList();
@@ -410,6 +606,39 @@ function bindColorModeControl() {
             scheduleInteractionUiRefresh();
         }
     });
+
+    syncColorModeControl();
+}
+
+function syncColorModeControl() {
+    const wrapper = document.getElementById('colorModeWrapper');
+    const colorModeSelect = document.getElementById('colorModeSelect');
+    if (!wrapper || !colorModeSelect) return;
+
+    const availableModes = Array.isArray(appState.availableColorModes) && appState.availableColorModes.length > 0
+        ? appState.availableColorModes
+        : ['analytic', 'global', 'database'];
+    const shouldHide = availableModes.length === 1 && availableModes[0] === 'database';
+
+    wrapper.classList.toggle('hidden', shouldHide);
+
+    const labels = {
+        analytic: 'Annotation',
+        global: 'Global',
+        database: 'Database'
+    };
+
+    colorModeSelect.innerHTML = availableModes
+        .map((mode) => `<option value="${mode}">${labels[mode] || mode}</option>`)
+        .join('');
+
+    if (!availableModes.includes(appState.colorMode)) {
+        applyColorModeToModifications(availableModes[0]);
+        syncOverlayColorsToActiveMode();
+        renderLegend();
+    }
+
+    colorModeSelect.value = appState.colorMode;
 }
 
 function syncOverlayColorsToActiveMode() {
@@ -613,19 +842,24 @@ function renderLegend() {
         { label: 'Missing', color: statusPalette.missing.hex }
     ];
 
-    const dynamicAnalyticRows = getAnalyticLegendRows();
-    const modeRows = appState.colorMode === 'global'
+    const dynamicAnalyticRows = getAnalyticLegendRows(appState.colorMode);
+    const isGlobal = appState.colorMode === 'global';
+    const isDatabase = appState.colorMode === 'database';
+    const modeRows = isGlobal
         ? globalRows
         : (dynamicAnalyticRows || analyticRows);
-    const modeTitle = appState.colorMode === 'global'
-        ? 'Status (Global View)'
-        : (dynamicAnalyticRows ? 'Mod Labels (Analytic View)' : 'Modification Type (Analytic View)');
+    const modeTitle = isGlobal
+        ? 'Status'
+        : (dynamicAnalyticRows ? 'Mod labels' : 'Modification type');
 
-    legendBody.innerHTML = `${renderLegendRows('RNA Backbones', chainRows)}${renderLegendRows(modeTitle, modeRows)}`;
+    legendBody.innerHTML = `${renderLegendRows('RNA backbones', chainRows)}${renderLegendRows(modeTitle, modeRows)}`;
 }
 
 function bindViewerToggles() {
-    document.getElementById('toggleProteins').addEventListener('change', () => {
+    const toggleProteins = document.getElementById('toggleProteins');
+    if (!toggleProteins) return;
+
+    toggleProteins.addEventListener('change', () => {
         runRenderTask(() => {
             if (!refresh3DmolProteinsOnly()) {
                 updateCurrentEngineStyles();
@@ -635,7 +869,9 @@ function bindViewerToggles() {
 }
 
 function bindCameraReset() {
-    document.getElementById('resetCameraBtn').addEventListener('click', () => {
+    const resetButton = document.getElementById('resetCameraSidebarBtn');
+    if (!resetButton) return;
+    resetButton.addEventListener('click', () => {
         const result = resetCameraView();
         if (!result.ok && result.reason === 'viewer') {
             showToast('Load a structure before resetting the camera.', true);
@@ -647,6 +883,70 @@ function bindSnapshotExport() {
     document.getElementById('snapshotBtn').addEventListener('click', () => {
         exportSnapshot();
     });
+}
+
+function bindPymolExport() {
+    const exportButton = document.getElementById('pymolExportBtn');
+    if (!exportButton) return;
+    exportButton.addEventListener('click', () => {
+        exportPymolScript();
+    });
+}
+
+function exportSessionJson() {
+    if (!appState.structureDataText) {
+        showToast('Load a structure before saving a session.', true);
+        return;
+    }
+
+    const view = appState.viewer3Dmol && typeof appState.viewer3Dmol.getView === 'function'
+        ? appState.viewer3Dmol.getView()
+        : null;
+
+    const payload = {
+        version: 1,
+        ribo: appState.currentRibo,
+        colorMode: appState.colorMode,
+        globalOpacity: appState.currentOpacity,
+        proteinOpacity: appState.proteinOpacity,
+        clippingDepth: appState.clippingDepth,
+        cameraView: view,
+        manualLabels: Array.from(appState.manualLabels.entries()),
+        measurementPairs: appState.measurementPairs,
+        modifications: appState.modifications
+    };
+
+    const fileName = `session-${appState.currentRibo}.json`;
+    downloadTextFile(JSON.stringify(payload, null, 2), fileName, 'application/json');
+    showToast('Session saved as JSON.');
+}
+
+function exportPymolScript() {
+    const fileName = `session-${appState.currentRibo}.pml`;
+    const script = [
+        '# PyMOL export (template)',
+        `# Structure: ${appState.currentRibo}`,
+        `load ${appState.currentRibo}.cif`,
+        'hide everything, all',
+        'show cartoon, all',
+        'color gray70, all',
+        '# TODO: map residue colors and labels from session JSON'
+    ].join('\n');
+
+    downloadTextFile(script, fileName, 'text/plain');
+    showToast('PyMOL script downloaded.');
+}
+
+function downloadTextFile(text, filename, mimeType) {
+    const blob = new Blob([text], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 function updateInteractionPanels() {
@@ -666,6 +966,3 @@ function formatResidueTag(residueSlot) {
     return `${residueSlot.type}:${residueSlot.residue}`;
 }
 
-function truncateFileName(fileName) {
-    return fileName.length > 18 ? `${fileName.slice(0, 15)}...` : fileName;
-}

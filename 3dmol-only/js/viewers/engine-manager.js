@@ -636,7 +636,7 @@ function apply3DmolBackboneStylesOnly() {
     if (!appState.viewer3Dmol) return;
 
     const config = rnaConfig[appState.currentRibo];
-    const showProteins = document.getElementById('toggleProteins').checked;
+    const showProteins = document.getElementById('toggleProteins')?.checked !== false;
 
     appState.viewer3Dmol.setStyle({}, {});
 
@@ -675,6 +675,7 @@ function apply3DmolBackboneStylesOnly() {
             }
         );
     });
+
 }
 
 export function refresh3DmolProteinsOnly() {
@@ -752,7 +753,7 @@ export function centerOnMeasurementPair(pair) {
 export function resetCameraView() {
     if (!appState.viewer3Dmol) return { ok: false, reason: 'viewer' };
 
-    appState.viewer3Dmol.zoomTo();
+    appState.viewer3Dmol.zoomTo(undefined, 750);
     appState.viewer3Dmol.render();
     return { ok: true, reason: 'ok' };
 }

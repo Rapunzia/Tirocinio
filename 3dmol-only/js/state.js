@@ -3,6 +3,7 @@
 export const appState = {
     currentRibo: '4v6x',
     colorMode: 'analytic',
+    availableColorModes: ['analytic', 'global', 'database'],
     structureDataText: null,
     modifications: [],
     currentOpacity: 0.85,

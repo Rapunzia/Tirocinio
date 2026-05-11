@@ -13,10 +13,17 @@ const PER_MOD_PALETTE = [
     modPalette.hyper
 ];
 
-const perModConfig = {
-    active: false,
-    legendRows: [],
-    paletteMap: new Map()
+const perModConfigByMode = {
+    analytic: {
+        active: false,
+        legendRows: [],
+        paletteMap: new Map()
+    },
+    database: {
+        active: false,
+        legendRows: [],
+        paletteMap: new Map()
+    }
 };
 
 const SUPERSCRIPT_DIGITS = {
@@ -75,6 +82,52 @@ function formatCombinedModLabel(rawMods) {
 function buildComboKey(modKeys) {
     if (!Array.isArray(modKeys) || modKeys.length < 2) return null;
     return [...modKeys].sort((a, b) => a.localeCompare(b)).join('+');
+}
+
+function resetPerModConfig(config) {
+    config.active = false;
+    config.legendRows = [];
+    config.paletteMap = new Map();
+}
+
+function buildPerModConfig(modifications, config, rawField, keyField, comboField) {
+    const uniqueLabelKeys = new Set();
+    const labelByKey = new Map();
+
+    modifications.forEach((modification) => {
+        const rawMods = modification[rawField];
+        const modKeys = modification[keyField];
+        const comboKey = modification[comboField];
+
+        if (modKeys.length === 1) {
+            const key = modKeys[0];
+            uniqueLabelKeys.add(key);
+            if (!labelByKey.has(key)) labelByKey.set(key, formatSingleModLabel(rawMods[0]));
+        }
+
+        if (comboKey) {
+            uniqueLabelKeys.add(comboKey);
+            if (!labelByKey.has(comboKey)) {
+                labelByKey.set(comboKey, formatCombinedModLabel(rawMods));
+            }
+        }
+    });
+
+    resetPerModConfig(config);
+    config.active = uniqueLabelKeys.size > 0 && uniqueLabelKeys.size <= PER_MOD_PALETTE.length;
+
+    if (!config.active) return;
+
+    const sortedKeys = Array.from(uniqueLabelKeys).sort((a, b) => a.localeCompare(b));
+    sortedKeys.forEach((key, index) => {
+        const palette = PER_MOD_PALETTE[index];
+        config.paletteMap.set(key, palette);
+        const rawLabel = labelByKey.get(key) || key;
+        config.legendRows.push({
+            label: formatSingleModLabel(rawLabel),
+            color: palette.hex
+        });
+    });
 }
 
 function normalizeWarnings(rawWarnings) {
@@ -148,8 +201,12 @@ function getStatusColor(status) {
 
 function resolveActivePalette(modification) {
     if (appState.colorMode === 'analytic') {
-        if (perModConfig.active && modification._perModPalette) return modification._perModPalette;
+        if (perModConfigByMode.analytic.active && modification._perModPalette) return modification._perModPalette;
         return modification._analyticPalette;
+    }
+    if (appState.colorMode === 'database') {
+        if (perModConfigByMode.database.active && modification._databasePerModPalette) return modification._databasePerModPalette;
+        return modification._databasePalette;
     }
     return appState.colorMode === 'global'
         ? modification._statusPalette
@@ -250,8 +307,7 @@ export function formatModificationText(rawMods) {
 
 export function hydrateModifications() {
     const config = rnaConfig[appState.currentRibo];
-    const uniqueLabelKeys = new Set();
-    const labelByKey = new Map();
+    let hasMods = false;
 
     appState.modifications.forEach((modification, index) => {
         normalizeRequiredFields(modification, index);
@@ -266,38 +322,21 @@ export function hydrateModifications() {
 
         modification._modKeys = modification.mods.map(normalizeModKey).filter(isCountableModKey);
         modification._comboKey = buildComboKey(modification._modKeys);
+        modification._refModKeys = modification.ref_mods.map(normalizeModKey).filter(isCountableModKey);
+        modification._refComboKey = buildComboKey(modification._refModKeys);
 
-        if (modification._modKeys.length === 1) {
-            const key = modification._modKeys[0];
-            uniqueLabelKeys.add(key);
-            if (!labelByKey.has(key)) labelByKey.set(key, formatSingleModLabel(modification.mods[0]));
-        }
-
-        if (modification._comboKey) {
-            uniqueLabelKeys.add(modification._comboKey);
-            if (!labelByKey.has(modification._comboKey)) {
-                labelByKey.set(modification._comboKey, formatCombinedModLabel(modification.mods));
-            }
-        }
+        if (modification.mods.length > 0) hasMods = true;
     });
 
-    perModConfig.active = uniqueLabelKeys.size > 0 && uniqueLabelKeys.size <= PER_MOD_PALETTE.length;
-    perModConfig.legendRows = [];
-    perModConfig.paletteMap = new Map();
-
-    if (perModConfig.active) {
-        const sortedKeys = Array.from(uniqueLabelKeys).sort((a, b) => a.localeCompare(b));
-
-        sortedKeys.forEach((key, index) => {
-            const palette = PER_MOD_PALETTE[index];
-            perModConfig.paletteMap.set(key, palette);
-            const rawLabel = labelByKey.get(key) || key;
-            perModConfig.legendRows.push({
-                label: formatSingleModLabel(rawLabel),
-                color: palette.hex
-            });
-        });
+    appState.availableColorModes = hasMods
+        ? ['analytic', 'global', 'database']
+        : ['database'];
+    if (!appState.availableColorModes.includes(appState.colorMode)) {
+        appState.colorMode = appState.availableColorModes[0];
     }
+
+    buildPerModConfig(appState.modifications, perModConfigByMode.analytic, 'mods', '_modKeys', '_comboKey');
+    buildPerModConfig(appState.modifications, perModConfigByMode.database, 'ref_mods', '_refModKeys', '_refComboKey');
 
     appState.modifications.forEach((modification, index) => {
         const chainConfig = config.chains[modification.chain] || null;
@@ -306,15 +345,26 @@ export function hydrateModifications() {
         modification._isResolved = modification.in_3d;
         modification._center = null;
         modification._analyticPalette = getModificationColor(modification.mods);
+        modification._databasePalette = getModificationColor(modification.ref_mods);
         modification._statusPalette = getStatusColor(modification.status);
         modification._perModPalette = null;
+        modification._databasePerModPalette = null;
 
-        if (perModConfig.active) {
+        if (perModConfigByMode.analytic.active) {
             if (modification._comboKey) {
-                modification._perModPalette = perModConfig.paletteMap.get(modification._comboKey) || null;
+                modification._perModPalette = perModConfigByMode.analytic.paletteMap.get(modification._comboKey) || null;
             } else if (modification._modKeys.length === 1) {
                 const key = modification._modKeys[0];
-                modification._perModPalette = perModConfig.paletteMap.get(key) || null;
+                modification._perModPalette = perModConfigByMode.analytic.paletteMap.get(key) || null;
+            }
+        }
+
+        if (perModConfigByMode.database.active) {
+            if (modification._refComboKey) {
+                modification._databasePerModPalette = perModConfigByMode.database.paletteMap.get(modification._refComboKey) || null;
+            } else if (modification._refModKeys.length === 1) {
+                const key = modification._refModKeys[0];
+                modification._databasePerModPalette = perModConfigByMode.database.paletteMap.get(key) || null;
             }
         }
 
@@ -334,7 +384,12 @@ export function hydrateModifications() {
 }
 
 export function applyColorModeToModifications(mode) {
-    appState.colorMode = mode === 'global' ? 'global' : 'analytic';
+    if (!Array.isArray(appState.availableColorModes) || appState.availableColorModes.length === 0) {
+        appState.availableColorModes = ['analytic', 'global', 'database'];
+    }
+
+    const nextMode = appState.availableColorModes.includes(mode) ? mode : appState.availableColorModes[0];
+    appState.colorMode = nextMode;
 
     appState.modifications.forEach((modification) => {
         modification._palette = resolveActivePalette(modification);
@@ -354,7 +409,10 @@ export function getModificationsHydrationToken() {
     return modificationsHydrationToken;
 }
 
-export function getAnalyticLegendRows() {
-    if (!perModConfig.active) return null;
-    return perModConfig.legendRows.slice();
+export function getAnalyticLegendRows(mode = appState.colorMode) {
+    if (mode === 'global') return null;
+    const key = mode === 'database' ? 'database' : 'analytic';
+    const config = perModConfigByMode[key];
+    if (!config || !config.active) return null;
+    return config.legendRows.slice();
 }

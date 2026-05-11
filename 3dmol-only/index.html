@@ -51,30 +51,46 @@
             
             <h1 class="text-2xl font-bold tracking-tight">Data Visualization</h1>
             <p class="text-sm text-white/50 text-center mb-2">Upload your structural files to begin exploration.</p>
+
+            <div id="uploadModeToggle" class="segmented-control" data-active="resume" role="tablist" aria-label="Session mode">
+                <span class="segmented-thumb" aria-hidden="true"></span>
+                <button class="segmented-option is-active" type="button" data-mode="resume" role="tab" aria-selected="true">Resume Session</button>
+                <button class="segmented-option" type="button" data-mode="new" role="tab" aria-selected="false">New Session</button>
+            </div>
             
-            <div class="w-full space-y-4 relative z-10">
-                <div class="flex flex-col gap-1.5">
-                    <span class="text-xs font-semibold text-white/40 uppercase tracking-widest pl-1">Structure</span>
-                    <select id="riboSelect" class="w-full appearance-none bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer backdrop-blur-md outline-none transition-all hover:bg-white/10">
-                        <option value="4v6x" class="text-black">Homo sapiens 80S (4v6x)</option>
-                    </select>
+            <div class="w-full relative z-10">
+                <div class="mode-panels">
+                    <div id="resumePanel" class="mode-panel is-active" role="tabpanel">
+                        <div class="dropzone" id="sessionDropzone" data-mode="resume">
+                            <input type="file" id="sessionFileInput" accept=".json" class="hidden">
+                            <div class="dropzone-body">
+                                <i class="fa-solid fa-file-lines dropzone-icon" aria-hidden="true"></i>
+                                <span class="dropzone-text">Drag and drop your JSON session file</span>
+                            </div>
+                            <div class="chip-row" id="sessionChips"></div>
+                        </div>
+                    </div>
+
+                    <div id="newPanel" class="mode-panel" role="tabpanel">
+                        <div class="flex flex-col gap-1.5">
+                            <span class="text-xs font-semibold text-white/40 uppercase tracking-widest pl-1">Structure</span>
+                            <select id="riboSelect" class="w-full appearance-none bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer backdrop-blur-md outline-none transition-all hover:bg-white/10">
+                                <option value="4v6x" class="text-black">Homo sapiens 80S (4v6x)</option>
+                            </select>
+                        </div>
+
+                        <div class="dropzone mt-4" id="newDropzone" data-mode="new">
+                            <input type="file" id="newFilesInput" accept=".fasta,.csv" class="hidden" multiple>
+                            <div class="dropzone-body">
+                                <i class="fa-solid fa-cloud-arrow-up dropzone-icon" aria-hidden="true"></i>
+                                <span class="dropzone-text">Drag and drop your FASTA and CSV files</span>
+                            </div>
+                            <div class="chip-row" id="newChips"></div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="flex flex-col gap-1.5">
-                    <span class="text-xs font-semibold text-white/40 uppercase tracking-widest pl-1">Modifications</span>
-                    <label id="uploadPill" class="flex flex-col items-center justify-center w-full h-28 border border-dashed border-white/20 rounded-xl cursor-pointer bg-white/5 hover:bg-white/10 hover:border-white/30 transition-all relative overflow-hidden group">
-                        <div class="absolute inset-0 flex items-center justify-center scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-10 transition-all duration-300">
-                            <div class="w-full h-full bg-blue-500 blur-2xl"></div>
-                        </div>
-                        <div class="flex flex-col items-center justify-center p-4 relative z-10">
-                            <svg class="w-7 h-7 mb-2 text-white/60 group-hover:text-blue-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                            <span id="fileNameDisplay" class="text-sm font-semibold text-white/80">Upload JSON</span>
-                        </div>
-                        <input type="file" id="jsonFile" accept=".json" class="hidden">
-                    </label>
-                </div>
-
-                <button id="loadCifBtn" class="w-full bg-blue-500 hover:bg-blue-400 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition-all transform active:scale-95 flex items-center justify-center gap-2 mt-4">
+                <button id="loadCifBtn" class="w-full bg-blue-500 hover:bg-blue-400 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition-all transform active:scale-95 flex items-center justify-center gap-2 mt-4" disabled>
                     Render Workspace
                 </button>
             </div>
@@ -90,59 +106,65 @@
                 <i class="fa-solid fa-house" aria-hidden="true"></i>
             </button>
             <div class="sidebar-divider"></div>
-            <button class="sidebar-icon-btn" type="button" data-panel-target="scene" title="Scene" aria-label="Scene">
-                <i class="fa-solid fa-camera" aria-hidden="true"></i>
+            <button id="resetCameraSidebarBtn" class="sidebar-icon-btn" type="button" title="Reset camera" aria-label="Reset camera">
+                <i class="fa-solid fa-crosshairs" aria-hidden="true"></i>
             </button>
             <button class="sidebar-icon-btn" type="button" data-panel-target="style" title="Style" aria-label="Style">
                 <i class="fa-solid fa-palette" aria-hidden="true"></i>
             </button>
-            <button id="saveSessionBtn" class="sidebar-icon-btn" type="button" title="Save session" aria-label="Save session">
+            <button class="sidebar-icon-btn" type="button" data-panel-target="export" title="Export" aria-label="Export">
                 <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
             </button>
         </nav>
 
         <!-- FLOATING PANELS -->
-        <section id="scenePanel" class="floating-panel" aria-hidden="true">
-            <div class="floating-panel-header">
-                <span>Scene</span>
-                <button class="panel-close-btn" type="button" data-panel-close aria-label="Close">&times;</button>
-            </div>
-            <div class="floating-panel-body">
-                <button id="resetCameraBtn" class="panel-action-btn panel-action-btn-compact" type="button">
-                    <span>Reset camera</span>
-                    <i class="fa-solid fa-crosshairs" aria-hidden="true"></i>
-                </button>
-                <button id="snapshotBtn" class="panel-action-btn panel-action-btn-compact" type="button">
-                    <span>Snapshot</span>
-                    <i class="fa-solid fa-camera-retro" aria-hidden="true"></i>
-                </button>
-                <label class="panel-toggle">
-                    <span>Proteins</span>
-                    <input type="checkbox" id="toggleProteins" class="hidden peer">
-                    <div class="panel-switch"></div>
-                </label>
-            </div>
-        </section>
-
         <section id="stylePanel" class="floating-panel" aria-hidden="true">
             <div class="floating-panel-header">
                 <span>Style</span>
                 <button class="panel-close-btn" type="button" data-panel-close aria-label="Close">&times;</button>
             </div>
             <div class="floating-panel-body">
-                <label id="colorModeWrapper" class="panel-toggle" title="Analytic/Global Mode">
-                    <span>Color mode</span>
-                    <input type="checkbox" id="colorModeToggle" class="hidden peer">
-                    <div class="panel-switch"></div>
-                    <span id="colorModeLabel" class="panel-value">Global</span>
+                <label id="colorModeWrapper" class="panel-toggle" title="Color scheme">
+                    <span>Color scheme</span>
+                    <select id="colorModeSelect" class="panel-select">
+                        <option value="analytic">Annotation</option>
+                        <option value="global">Global</option>
+                        <option value="database">Database</option>
+                    </select>
                 </label>
                 <div class="panel-slider">
                     <div class="panel-slider-row">
-                        <span>Opacity</span>
+                        <span>Global opacity</span>
                         <span id="opacityVal" class="panel-value">0.85</span>
                     </div>
                     <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.85">
                 </div>
+                <label class="panel-toggle">
+                    <span>Structural Proteins</span>
+                    <input type="checkbox" id="toggleProteins" class="hidden peer">
+                    <div class="panel-switch"></div>
+                </label>
+            </div>
+        </section>
+
+        <section id="exportPanel" class="floating-panel" aria-hidden="true">
+            <div class="floating-panel-header">
+                <span>Export</span>
+                <button class="panel-close-btn" type="button" data-panel-close aria-label="Close">&times;</button>
+            </div>
+            <div class="floating-panel-body">
+                <button id="saveSessionBtn" class="panel-action-btn" type="button">
+                    <span>Save session (.json)</span>
+                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                </button>
+                <button id="snapshotBtn" class="panel-action-btn" type="button">
+                    <span>Snapshot (.png)</span>
+                    <i class="fa-solid fa-camera-retro" aria-hidden="true"></i>
+                </button>
+                <button id="pymolExportBtn" class="panel-action-btn" type="button">
+                    <span>PyMOL script (.pml)</span>
+                    <i class="fa-solid fa-file-code" aria-hidden="true"></i>
+                </button>
             </div>
         </section>
 
