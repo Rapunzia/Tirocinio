@@ -6,8 +6,11 @@ export const appState = {
     availableColorModes: ['analytic', 'global', 'database'],
     structureDataText: null,
     modifications: [],
-    currentOpacity: 0.85,
+    currentOpacity: 0.7,
     selectedListItem: null,
+    databaseOverlayEnabled: false,
+    isolateUnknownEnabled: false,
+    isPositionalOnly: false,
 
     ui: {
         activePanel: null,

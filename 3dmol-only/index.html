@@ -124,20 +124,22 @@
                 <button class="panel-close-btn" type="button" data-panel-close aria-label="Close">&times;</button>
             </div>
             <div class="floating-panel-body">
-                <label id="colorModeWrapper" class="panel-toggle" title="Color scheme">
-                    <span>Color scheme</span>
-                    <select id="colorModeSelect" class="panel-select">
-                        <option value="analytic">Annotation</option>
-                        <option value="global">Global</option>
-                        <option value="database">Database</option>
-                    </select>
+                <label class="panel-toggle">
+                    <span>Database Overlay</span>
+                    <input type="checkbox" id="toggleDatabaseOverlay" class="hidden peer">
+                    <div class="panel-switch"></div>
+                </label>
+                <label class="panel-toggle">
+                    <span>Isolate Unknown</span>
+                    <input type="checkbox" id="toggleIsolateUnknown" class="hidden peer">
+                    <div class="panel-switch"></div>
                 </label>
                 <div class="panel-slider">
                     <div class="panel-slider-row">
                         <span>Global opacity</span>
-                        <span id="opacityVal" class="panel-value">0.85</span>
+                        <span id="opacityVal" class="panel-value">0.70</span>
                     </div>
-                    <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.85">
+                    <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.7">
                 </div>
                 <label class="panel-toggle">
                     <span>Structural Proteins</span>
@@ -145,6 +147,7 @@
                     <div class="panel-switch"></div>
                 </label>
             </div>
+
         </section>
 
         <section id="exportPanel" class="floating-panel" aria-hidden="true">

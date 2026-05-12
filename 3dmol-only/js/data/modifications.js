@@ -4,13 +4,13 @@ import { appState } from '../state.js';
 let modificationsHydrationToken = 0;
 
 const PER_MOD_PALETTE = [
-    modPalette.varI,
-    modPalette.varR,
-    modPalette.varB,
-    modPalette.varBR,
-    modPalette.varIR,
-    modPalette.complex,
-    modPalette.hyper
+    modPalette.varR,      // Blue (Primary)
+    modPalette.complex,   // Orange
+    modPalette.varBR,     // Purple
+    modPalette.varIR,     // Cyan
+    modPalette.hyper,     // Dark Gray
+    modPalette.varI,      // Green (Match-like, deferred)
+    modPalette.varB       // Red (Novel-like, deferred)
 ];
 
 const perModConfigByMode = {
@@ -90,25 +90,34 @@ function resetPerModConfig(config) {
     config.paletteMap = new Map();
 }
 
-function buildPerModConfig(modifications, config, rawField, keyField, comboField) {
+function buildUnifiedPerModConfig(modifications, config) {
     const uniqueLabelKeys = new Set();
     const labelByKey = new Map();
 
     modifications.forEach((modification) => {
-        const rawMods = modification[rawField];
-        const modKeys = modification[keyField];
-        const comboKey = modification[comboField];
-
-        if (modKeys.length === 1) {
-            const key = modKeys[0];
+        // Collect from mods
+        if (modification._modKeys.length === 1) {
+            const key = modification._modKeys[0];
             uniqueLabelKeys.add(key);
-            if (!labelByKey.has(key)) labelByKey.set(key, formatSingleModLabel(rawMods[0]));
+            if (!labelByKey.has(key)) labelByKey.set(key, formatSingleModLabel(modification.mods[0]));
+        }
+        if (modification._comboKey) {
+            uniqueLabelKeys.add(modification._comboKey);
+            if (!labelByKey.has(modification._comboKey)) {
+                labelByKey.set(modification._comboKey, formatCombinedModLabel(modification.mods));
+            }
         }
 
-        if (comboKey) {
-            uniqueLabelKeys.add(comboKey);
-            if (!labelByKey.has(comboKey)) {
-                labelByKey.set(comboKey, formatCombinedModLabel(rawMods));
+        // Collect from ref_mods
+        if (modification._refModKeys.length === 1) {
+            const key = modification._refModKeys[0];
+            uniqueLabelKeys.add(key);
+            if (!labelByKey.has(key)) labelByKey.set(key, formatSingleModLabel(modification.ref_mods[0]));
+        }
+        if (modification._refComboKey) {
+            uniqueLabelKeys.add(modification._refComboKey);
+            if (!labelByKey.has(modification._refComboKey)) {
+                labelByKey.set(modification._refComboKey, formatCombinedModLabel(modification.ref_mods));
             }
         }
     });
@@ -241,8 +250,12 @@ function buildMeasurementSlot(modification) {
 export function getModificationColor(rawMods) {
     const mods = normalizeMods(rawMods);
 
-    if (mods.length === 0 || mods.includes('none')) return modPalette.standard;
-    if (mods.includes('unknown') || mods.includes('?')) return modPalette.standard;
+    if (mods.length === 0 || mods.includes('none')) {
+        return appState.isPositionalOnly ? modPalette.standard : modPalette.unannotated;
+    }
+    if (mods.includes('unknown') || mods.includes('?')) {
+        return appState.isPositionalOnly ? modPalette.standard : modPalette.unannotated;
+    }
 
     let hasI = false;
     let hasR = false;
@@ -308,6 +321,7 @@ export function formatModificationText(rawMods) {
 export function hydrateModifications() {
     const config = rnaConfig[appState.currentRibo];
     let hasMods = false;
+    let hasMissingMods = false;
 
     appState.modifications.forEach((modification, index) => {
         normalizeRequiredFields(modification, index);
@@ -325,8 +339,14 @@ export function hydrateModifications() {
         modification._refModKeys = modification.ref_mods.map(normalizeModKey).filter(isCountableModKey);
         modification._refComboKey = buildComboKey(modification._refModKeys);
 
-        if (modification.mods.length > 0) hasMods = true;
+        if (modification.mods.length > 0 && !modification.mods.includes('none')) {
+            hasMods = true;
+        } else if (modification.ref_mods.length > 0) {
+            hasMissingMods = true;
+        }
     });
+
+    appState.isPositionalOnly = !hasMods;
 
     appState.availableColorModes = hasMods
         ? ['analytic', 'global', 'database']
@@ -335,8 +355,19 @@ export function hydrateModifications() {
         appState.colorMode = appState.availableColorModes[0];
     }
 
-    buildPerModConfig(appState.modifications, perModConfigByMode.analytic, 'mods', '_modKeys', '_comboKey');
-    buildPerModConfig(appState.modifications, perModConfigByMode.database, 'ref_mods', '_refModKeys', '_refComboKey');
+    buildUnifiedPerModConfig(appState.modifications, perModConfigByMode.analytic);
+
+    if (!appState.isPositionalOnly && hasMissingMods && perModConfigByMode.analytic.active) {
+        perModConfigByMode.analytic.legendRows.push({
+            label: 'Unannotated',
+            color: modPalette.unannotated.hex
+        });
+    }
+
+    // Copy the unified config to database for legend rendering consistency
+    perModConfigByMode.database.active = perModConfigByMode.analytic.active;
+    perModConfigByMode.database.legendRows = [...perModConfigByMode.analytic.legendRows];
+    perModConfigByMode.database.paletteMap = perModConfigByMode.analytic.paletteMap;
 
     appState.modifications.forEach((modification, index) => {
         const chainConfig = config.chains[modification.chain] || null;

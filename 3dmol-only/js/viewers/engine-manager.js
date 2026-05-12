@@ -18,9 +18,11 @@ let on3DmolResiduePicked = null;
 let dynamicOverlayLabels3Dmol = [];
 let dynamicOverlayShapes3Dmol = [];
 
-const styleGroupCache3Dmol = {
+const styleGroupCache3Dmol = new Map();
+
+const chainResidueCache3Dmol = {
     key: null,
-    groups: []
+    map: new Map()
 };
 
 const selectableResidueCache3Dmol = {
@@ -61,6 +63,9 @@ export function renderActiveEngine() {
 
     appState.viewer3Dmol.clear();
     appState.viewer3Dmol.addModel(appState.structureDataText, 'cif');
+    chainResidueCache3Dmol.key = null;
+    chainResidueCache3Dmol.map = new Map();
+    hasBound3DmolPicking = false;
     bind3DmolResiduePicking();
     appState.viewer3Dmol.zoomTo();
     apply3DmolStyles();
@@ -114,27 +119,83 @@ export function updateCurrentEngineStyles(options = {}) {
     }, 0);
 }
 
-function buildStyleGroups() {
-    const hydrationToken = getModificationsHydrationToken();
-    const cacheKey = `${hydrationToken}`;
+function getModsPalette(mod) {
+    return mod._perModPalette || mod._analyticPalette || mod._palette;
+}
 
-    if (styleGroupCache3Dmol.key === cacheKey) {
-        return styleGroupCache3Dmol.groups;
-    }
+function getRefPalette(mod) {
+    return mod._databasePerModPalette || mod._databasePalette;
+}
+
+function getChainResiduesMap3Dmol() {
+    if (!appState.viewer3Dmol) return new Map();
+
+    const cacheKey = `${appState.currentRibo}|${appState.structureDataText ? appState.structureDataText.length : 0}`;
+    if (chainResidueCache3Dmol.key === cacheKey) return chainResidueCache3Dmol.map;
+
+    const map = new Map();
+    const config = rnaConfig[appState.currentRibo];
+    if (!config || !config.chains) return map;
+
+    Object.values(config.chains).forEach((chainConfig) => {
+        if (!chainConfig.auth) return;
+        const atoms = appState.viewer3Dmol.selectedAtoms({ chain: chainConfig.auth }) || [];
+        const resiSet = new Set();
+        atoms.forEach((atom) => {
+            const resi = atom.resi ?? atom.resno;
+            if (resi === null || resi === undefined) return;
+            resiSet.add(Number(resi));
+        });
+        map.set(chainConfig.auth, resiSet);
+    });
+
+    chainResidueCache3Dmol.key = cacheKey;
+    chainResidueCache3Dmol.map = map;
+    return map;
+}
+
+function buildDualStyleGroups(useDatabaseOverlay, isolateUnknown) {
+    const hydrationToken = getModificationsHydrationToken();
+    const cacheKey = `${hydrationToken}|${useDatabaseOverlay}|${isolateUnknown}`;
+
+    const cached = styleGroupCache3Dmol.get(cacheKey);
+    if (cached) return cached;
 
     const groups = {};
 
     appState.modifications.forEach((mod) => {
         if (!mod._isResolved) return;
+        if (isolateUnknown && mod.status !== 'novel') return;
+
+        const modPalette = getModsPalette(mod);
+        if (!modPalette) return;
+
+        let modColor = modPalette.hex;
+        let refColor = modColor;
+        let hasRefMods = false;
+
+        const refPalette = getRefPalette(mod);
+        hasRefMods = Array.isArray(mod.ref_mods) && mod.ref_mods.length > 0;
+
+        if (hasRefMods && refPalette) {
+            refColor = refPalette.hex;
+        }
+
+        if (appState.isPositionalOnly && hasRefMods && refPalette) {
+            modColor = refColor;
+        } else if (!useDatabaseOverlay) {
+            refColor = modColor;
+        }
 
         const chain = mod._authChain;
-        const hex = mod._palette.hex;
-        const key = `${chain}|${hex}`;
+        const key = `${chain}|${modColor}|${refColor}|${hasRefMods}`;
 
         if (!groups[key]) {
             groups[key] = {
                 chain,
-                color: hex,
+                modColor,
+                refColor,
+                hasRefMods,
                 resi: []
             };
         }
@@ -142,9 +203,17 @@ function buildStyleGroups() {
         groups[key].resi.push(mod.resi);
     });
 
-    styleGroupCache3Dmol.key = cacheKey;
-    styleGroupCache3Dmol.groups = Object.values(groups);
-    return styleGroupCache3Dmol.groups;
+    const result = Object.values(groups);
+
+    // Evict stale entries from previous hydration tokens.
+    styleGroupCache3Dmol.forEach((_value, existingKey) => {
+        if (!existingKey.startsWith(`${hydrationToken}|`)) {
+            styleGroupCache3Dmol.delete(existingKey);
+        }
+    });
+
+    styleGroupCache3Dmol.set(cacheKey, result);
+    return result;
 }
 
 function getSelectableResidueModMap3Dmol() {
@@ -632,55 +701,92 @@ export function clearAllMeasurementPairs(options = {}) {
     return true;
 }
 
-function apply3DmolBackboneStylesOnly() {
+
+
+function apply3DmolBaseStylesOnly() {
     if (!appState.viewer3Dmol) return;
 
     const config = rnaConfig[appState.currentRibo];
     const showProteins = document.getElementById('toggleProteins')?.checked !== false;
+    const rnaChains = Object.values(config.chains)
+        .map((chainConfig) => chainConfig.auth)
+        .filter(Boolean);
 
-    appState.viewer3Dmol.setStyle({}, {});
-
-    if (showProteins) {
-        appState.viewer3Dmol.setStyle({}, {
-            cartoon: {
-                color: '#E0E0E0',
-                opacity: appState.currentOpacity
-            }
-        });
+    if (rnaChains.length > 0) {
+        const proteinSelection = { not: { chain: rnaChains } };
+        const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
+        if (showProteins) {
+            appState.viewer3Dmol.setStyle(proteinSelection, {
+                cartoon: { color: '#E0E0E0', opacity: baseOpacity }
+            });
+        } else {
+            appState.viewer3Dmol.setStyle(proteinSelection, {});
+        }
     }
 
     Object.values(config.chains).forEach((chainConfig) => {
         if (!chainConfig.auth || !chainConfig.defaultColor) return;
 
+        const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
         appState.viewer3Dmol.setStyle(
             { chain: chainConfig.auth },
-            {
-                cartoon: {
-                    color: chainConfig.defaultColor,
-                    opacity: appState.currentOpacity
-                }
-            }
+            { cartoon: { color: chainConfig.defaultColor, opacity: baseOpacity } }
         );
     });
+}
 
-    buildStyleGroups().forEach((group) => {
+function apply3DmolAnnotationStyles() {
+    if (!appState.viewer3Dmol) return;
+
+    const dualGroups = buildDualStyleGroups(appState.databaseOverlayEnabled, appState.isolateUnknownEnabled);
+    const config = rnaConfig[appState.currentRibo];
+
+    dualGroups.forEach((group) => {
+        let chainDefaultColor = '#cccccc';
+        if (config && config.chains) {
+            const chainConfig = Object.values(config.chains).find(c => c.auth === group.chain);
+            if (chainConfig && chainConfig.defaultColor) {
+                chainDefaultColor = chainConfig.defaultColor;
+            }
+        }
+
+        const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
         appState.viewer3Dmol.setStyle(
+            { chain: group.chain, resi: group.resi },
             {
-                chain: group.chain,
-                resi: group.resi
-            },
-            {
-                cartoon: { color: group.color, opacity: 1.0 },
-                sphere: { radius: 1.2, color: group.color }
+                cartoon: { color: chainDefaultColor, opacity: baseOpacity },
+                stick: { color: group.modColor, radius: 1.5, opacity: 1.0 }
             }
         );
-    });
 
+        if (appState.databaseOverlayEnabled && group.hasRefMods) {
+            appState.viewer3Dmol.addStyle(
+                { chain: group.chain, resi: group.resi, atom: "C1'" },
+                {
+                    sphere: { color: group.refColor, radius: 2.5, wireframe: false, opacity: 1.0 }
+                }
+            );
+        }
+    });
 }
 
 export function refresh3DmolProteinsOnly() {
     if (!appState.viewer3Dmol) return false;
-    apply3DmolBackboneStylesOnly();
+    apply3DmolBaseStylesOnly();
+    appState.viewer3Dmol.render();
+    return true;
+}
+
+export function applyOpacityToBackboneOnly() {
+    if (!appState.viewer3Dmol) return false;
+
+    // Full style rebuild required — 3Dmol rebuilds cartoon mesh per-chain.
+    appState.viewer3Dmol.setStyle({}, {});
+    appState.viewer3Dmol.removeAllSurfaces();
+
+    apply3DmolBaseStylesOnly();
+    apply3DmolAnnotationStyles();
+
     appState.viewer3Dmol.render();
     return true;
 }
@@ -708,8 +814,10 @@ function apply3DmolStyles(options = {}) {
     appState.viewer3Dmol.setStyle({}, {});
     appState.viewer3Dmol.removeAllLabels();
     appState.viewer3Dmol.removeAllShapes();
+    appState.viewer3Dmol.removeAllSurfaces();
 
-    apply3DmolBackboneStylesOnly();
+    apply3DmolBaseStylesOnly();
+    apply3DmolAnnotationStyles();
     addManualResidueLabels(labelScale);
     addMeasurementOverlay(labelScale);
 

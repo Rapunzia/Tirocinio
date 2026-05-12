@@ -1,8 +1,8 @@
 import { appState } from './state.js';
 import { rnaConfig, modPalette, statusPalette } from './constants.js';
-import { showToast } from './ui/toast.js';
+import { hideToast, showToast } from './ui/toast.js';
 import { setLoading, finishProgress } from './ui/loading.js';
-import { applyColorModeToModifications, getAnalyticLegendRows, hydrateModifications } from './data/modifications.js';
+import { getAnalyticLegendRows, hydrateModifications } from './data/modifications.js';
 import {
     applyFilters,
     generateDOMList,
@@ -14,7 +14,8 @@ import {
     setMeasurementPairSelectionHandler,
     setFilterQuery,
     setFilterType,
-    setSortMode
+    setSortMode,
+    selectCardForMod
 } from './ui/mod-list.js';
 import {
     clearAllMeasurementPairs,
@@ -25,6 +26,7 @@ import {
     exportSnapshot,
     resetCameraView,
     renderActiveEngine,
+    applyOpacityToBackboneOnly,
     refresh3DmolProteinsOnly,
     selectResidueForMeasurement,
     set3DmolResiduePickHandler,
@@ -33,18 +35,19 @@ import {
     updateCurrentEngineStyles
 } from './viewers/engine-manager.js';
 
-let opacityUpdateTimerId = null;
 let pendingFocusRequest = null;
 let focusRequestTimerId = null;
 let pendingInteractionUiTimerId = null;
 let contextMenuResidue = null;
-let pendingOpacityCommit = false;
 let setLegendExpandedHandler = null;
 let overlayCloseTimerId = null;
 let uploadMode = 'resume';
 let sessionData = null;
 let sequenceData = null;
 let modificationData = null;
+let isMeasureModeActive = false;
+
+const MEASURE_WAITING_MESSAGE = 'Select second residue.';
 
 function waitNextFrame() {
     return new Promise((resolve) => {
@@ -75,6 +78,41 @@ function runRenderTask(task, message) {
     }, 0);
 }
 
+function showMeasureWaitingToast() {
+    showToast(MEASURE_WAITING_MESSAGE, false, null);
+}
+
+function clearMeasureWaitingToast() {
+    const toast = document.getElementById('_toast');
+    if (toast && toast.textContent === MEASURE_WAITING_MESSAGE) hideToast();
+}
+
+function setMeasureModeActive(isActive) {
+    const viewer = document.getElementById('viewer-container');
+    if (viewer) viewer.classList.toggle('is-measuring', isActive);
+
+    isMeasureModeActive = isActive;
+
+    if (isActive) {
+        const toast = document.getElementById('_toast');
+        const hasBlockingError = toast
+            && toast.classList.contains('visible')
+            && toast.classList.contains('error');
+
+        if (!hasBlockingError) showMeasureWaitingToast();
+        return;
+    }
+
+    clearMeasureWaitingToast();
+}
+
+function cancelMeasurementMode() {
+    if (!appState.measurementDraft.first) return;
+    clearMeasurementSelection();
+    setMeasureModeActive(false);
+    scheduleInteractionUiRefresh();
+}
+
 // Entry point for wiring UI events and cross-module interactions.
 export function initializeApp() {
     initModListSelectionHandler(handleResidueListSelection);
@@ -90,7 +128,6 @@ export function initializeApp() {
     bindUploadModeControls();
     bindUploadDropzones();
     bindOpacitySlider();
-    bindColorModeControl();
     bindFilterControls();
     bindLabelTools();
     bindSidebarToggle();
@@ -100,8 +137,22 @@ export function initializeApp() {
     bindSnapshotExport();
     bindPymolExport();
     bindResidueContextMenu();
+    bindGlobalMeasurementCancel();
     renderLegend();
     updateRenderButtonState();
+}
+
+function bindGlobalMeasurementCancel() {
+    document.addEventListener('click', (event) => {
+        if (!appState.measurementDraft.first) return;
+
+        const target = event.target;
+        const isViewerClick = target.closest('#gldiv-3dmol');
+        const isContextMenuClick = target.closest('#residueContextMenu');
+        if (isViewerClick || isContextMenuClick) return;
+
+        cancelMeasurementMode();
+    });
 }
 
 function scheduleResidueFocus(mod) {
@@ -114,6 +165,7 @@ function scheduleResidueFocus(mod) {
         pendingFocusRequest = null;
         if (!next) return;
 
+        selectCardForMod(next);
         centerOnResidue(next.resi, next._authChain);
     }, 0);
 }
@@ -135,8 +187,12 @@ function handleViewerResiduePick(mod, meta = {}) {
             prependMeasurementPairNode(result.pair);
             showToast('Measurement pair created.');
             centerOnMeasurementPair(result.pair);
+            setMeasureModeActive(false);
         } else if (result.stage === 'same') {
-            showToast('Pick a different second residue.', true);
+            showToast('Pick a different second residue.', true, 2000);
+            setTimeout(() => {
+                if (appState.measurementDraft.first) showMeasureWaitingToast();
+            }, 2100);
         }
 
         if (result.stage !== 'same') {
@@ -233,7 +289,6 @@ function bindStructureLoader() {
 
             if (appState.modifications.length > 0) {
                 hydrateModifications();
-                syncColorModeControl();
                 generateDOMList();
                 renderLegend();
                 scheduleInteractionUiRefresh();
@@ -556,15 +611,11 @@ function bindOpacitySlider() {
     slider.addEventListener('input', function onOpacityInput() {
         appState.currentOpacity = parseFloat(this.value);
         document.getElementById('opacityVal').textContent = appState.currentOpacity.toFixed(2);
-        pendingOpacityCommit = true;
     });
 
     slider.addEventListener('change', () => {
-        pendingOpacityCommit = false;
         runRenderTask(() => {
-            if (!refresh3DmolProteinsOnly()) {
-                updateCurrentEngineStyles();
-            }
+            applyOpacityToBackboneOnly();
         }, 'Updating opacity...');
     });
 }
@@ -591,55 +642,7 @@ function bindFilterControls() {
     });
 }
 
-function bindColorModeControl() {
-    const colorModeSelect = document.getElementById('colorModeSelect');
-    if (!colorModeSelect) return;
 
-    colorModeSelect.addEventListener('change', () => {
-        applyColorModeToModifications(colorModeSelect.value);
-        syncOverlayColorsToActiveMode();
-        renderLegend();
-
-        if (appState.modifications.length > 0) {
-            generateDOMList();
-            updateCurrentEngineStyles();
-            scheduleInteractionUiRefresh();
-        }
-    });
-
-    syncColorModeControl();
-}
-
-function syncColorModeControl() {
-    const wrapper = document.getElementById('colorModeWrapper');
-    const colorModeSelect = document.getElementById('colorModeSelect');
-    if (!wrapper || !colorModeSelect) return;
-
-    const availableModes = Array.isArray(appState.availableColorModes) && appState.availableColorModes.length > 0
-        ? appState.availableColorModes
-        : ['analytic', 'global', 'database'];
-    const shouldHide = availableModes.length === 1 && availableModes[0] === 'database';
-
-    wrapper.classList.toggle('hidden', shouldHide);
-
-    const labels = {
-        analytic: 'Annotation',
-        global: 'Global',
-        database: 'Database'
-    };
-
-    colorModeSelect.innerHTML = availableModes
-        .map((mode) => `<option value="${mode}">${labels[mode] || mode}</option>`)
-        .join('');
-
-    if (!availableModes.includes(appState.colorMode)) {
-        applyColorModeToModifications(availableModes[0]);
-        syncOverlayColorsToActiveMode();
-        renderLegend();
-    }
-
-    colorModeSelect.value = appState.colorMode;
-}
 
 function syncOverlayColorsToActiveMode() {
     const modByKey = new Map();
@@ -715,12 +718,14 @@ function bindResidueContextMenu() {
         const result = selectResidueForMeasurement(contextMenuResidue);
         closeResidueContextMenu();
 
+        setMeasureModeActive(Boolean(appState.measurementDraft.first));
+
         if (result.stage === 'first') {
             const actionHint = document.getElementById('actionHint');
             if (actionHint) {
                 actionHint.textContent = `Measuring from ${result.changed ? contextMenuResidue.chain : ''}:${contextMenuResidue.resi}. Click second residue in viewer.`;
             }
-            showToast('First residue selected. Click the second residue in the viewer.');
+            showMeasureWaitingToast();
         }
 
         scheduleInteractionUiRefresh();
@@ -836,27 +841,17 @@ function renderLegend() {
         { label: 'Hyper-Variable', color: modPalette.hyper.hex }
     ];
 
-    const globalRows = [
-        { label: 'Match', color: statusPalette.match.hex },
-        { label: 'Novel', color: statusPalette.novel.hex },
-        { label: 'Missing', color: statusPalette.missing.hex }
-    ];
+    const dynamicAnalyticRows = getAnalyticLegendRows('analytic');
+    const modeRows = dynamicAnalyticRows || analyticRows;
+    let html = `${renderLegendRows('RNA backbones', chainRows)}`;
+    html += `${renderLegendRows('Modifications', modeRows)}`;
 
-    const dynamicAnalyticRows = getAnalyticLegendRows(appState.colorMode);
-    const isGlobal = appState.colorMode === 'global';
-    const isDatabase = appState.colorMode === 'database';
-    const modeRows = isGlobal
-        ? globalRows
-        : (dynamicAnalyticRows || analyticRows);
-    const modeTitle = isGlobal
-        ? 'Status'
-        : (dynamicAnalyticRows ? 'Mod labels' : 'Modification type');
-
-    legendBody.innerHTML = `${renderLegendRows('RNA backbones', chainRows)}${renderLegendRows(modeTitle, modeRows)}`;
+    legendBody.innerHTML = html;
 }
 
 function bindViewerToggles() {
     const toggleProteins = document.getElementById('toggleProteins');
+    const toggleDatabaseOverlay = document.getElementById('toggleDatabaseOverlay');
     if (!toggleProteins) return;
 
     toggleProteins.addEventListener('change', () => {
@@ -866,6 +861,22 @@ function bindViewerToggles() {
             }
         }, 'Updating proteins...');
     });
+
+    if (!toggleDatabaseOverlay) return;
+
+    toggleDatabaseOverlay.addEventListener('change', () => {
+        appState.databaseOverlayEnabled = toggleDatabaseOverlay.checked;
+        updateCurrentEngineStyles();
+        renderLegend();
+    });
+
+    const toggleIsolateUnknown = document.getElementById('toggleIsolateUnknown');
+    if (toggleIsolateUnknown) {
+        toggleIsolateUnknown.addEventListener('change', () => {
+            appState.isolateUnknownEnabled = toggleIsolateUnknown.checked;
+            updateCurrentEngineStyles();
+        });
+    }
 }
 
 function bindCameraReset() {
@@ -906,7 +917,6 @@ function exportSessionJson() {
     const payload = {
         version: 1,
         ribo: appState.currentRibo,
-        colorMode: appState.colorMode,
         globalOpacity: appState.currentOpacity,
         proteinOpacity: appState.proteinOpacity,
         clippingDepth: appState.clippingDepth,
@@ -957,6 +967,7 @@ function updateInteractionPanels() {
     if (!actionHint) return;
 
     const hasDraft = Boolean(appState.measurementDraft.first);
+    setMeasureModeActive(hasDraft);
     actionHint.textContent = hasDraft
         ? `Measuring from ${formatResidueTag(appState.measurementDraft.first)}. Click second residue in viewer.`
         : 'Left click on residue: zoom. Right click: actions menu.';

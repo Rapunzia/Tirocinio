@@ -7,7 +7,8 @@ export const modPalette = {
     varBR: { hex: '#D500F9', rgb: { r: 213, g: 0, b: 249 } },
     varIR: { hex: '#00E5FF', rgb: { r: 0, g: 229, b: 255 } },
     complex: { hex: '#FF9100', rgb: { r: 255, g: 145, b: 0 } },
-    hyper: { hex: '#222222', rgb: { r: 34, g: 34, b: 34 } }
+    hyper: { hex: '#222222', rgb: { r: 34, g: 34, b: 34 } },
+    unannotated: { hex: '#F0E442', rgb: { r: 240, g: 228, b: 66 } }
 };
 
 export const statusPalette = {

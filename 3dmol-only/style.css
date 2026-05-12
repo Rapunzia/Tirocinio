@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
     3DMOL-ONLY WORKSPACE
    Aesthetic: Dark / High Contrast / Professional
    ========================================================= */
@@ -243,6 +243,12 @@ select option { background: #f8fafc; color: #0f172a; }
     inset: 0;
     width: 100%;
     height: 100%;
+}
+
+#viewer-container.is-measuring,
+#viewer-container.is-measuring #gldiv-3dmol,
+#viewer-container.is-measuring #gldiv-3dmol canvas {
+    cursor: crosshair;
 }
 
 /* ── CONTROL MODULE ── */
@@ -844,6 +850,7 @@ select option { background: #f8fafc; color: #0f172a; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     align-content: start;
+    align-items: start;
     list-style: none;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(241, 245, 255, 0.25));
 }
@@ -856,123 +863,125 @@ select option { background: #f8fafc; color: #0f172a; }
     background: rgba(255, 255, 255, 0.7);
     border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: 12px;
-    padding: 6px 8px;
+    padding: 6px 8px 6px 12px;
     cursor: pointer;
-    border-left-width: 4px;
-    border-left-style: solid;
+    border-left-width: 0;
     min-width: 0;
     display: grid;
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto;
     column-gap: 6px;
     row-gap: 1px;
     align-items: center;
+    position: relative;
+}
+
+#modList li::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    left: -1px;
+    width: 16px;
+    border-radius: 12px 0 0 12px;
+    border: 0 solid transparent;
+    border-left-width: 4px;
+    background: var(--card-color, #CCCCCC) border-box;
+    -webkit-mask: 
+        linear-gradient(#fff 0 0) padding-box, 
+        linear-gradient(#fff 0 0) border-box;
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+    z-index: 1;
 }
 
 #modList li:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(255, 255, 255, 0.85); }
-#modList li.selected { background: rgba(37, 99, 235, 0.12); border-color: rgba(37, 99, 235, 0.55); box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2); }
-#modList li.li-labeled { box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.35); }
-#modList li.li-measure-a { border-left-color: #38bdf8 !important; background: rgba(14, 165, 233, 0.1); }
-#modList li.li-measure-b { border-left-color: #2dd4bf !important; background: rgba(20, 184, 166, 0.1); }
-#modList li.li-linked-target { box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.28); }
+#modList li.selected { background: rgba(37, 99, 235, 0.12); border-color: rgba(37, 99, 235, 0.55); }
+#modList li.li-labeled { border-color: rgba(8, 145, 178, 0.45); background: rgba(8, 145, 178, 0.08); }
+#modList li.li-measure-a { background: rgba(14, 165, 233, 0.1); }
+#modList li.li-measure-a::before { background: #38bdf8 border-box !important; }
+#modList li.li-measure-b { background: rgba(20, 184, 166, 0.1); }
+#modList li.li-measure-b::before { background: #2dd4bf border-box !important; }
+#modList li.li-linked-target { border-color: rgba(15, 118, 110, 0.4); background: rgba(15, 118, 110, 0.08); }
 
 #modList li.li-linked-pair {
     grid-column: 1 / -1;
-    border-left-width: 1px;
-    padding: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-    grid-template-rows: 1fr;
-    column-gap: 0;
-    row-gap: 0;
-    overflow: hidden;
-    min-height: 56px;
+    padding: 6px 10px 6px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 36px;
     background: rgba(255, 255, 255, 0.72);
+}
+
+#modList li.li-linked-pair::before {
+    background: linear-gradient(180deg, var(--pair-color-a) 0%, var(--pair-color-b) 100%) border-box;
 }
 
 #modList li.li-linked-pair:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(255, 255, 255, 0.85); }
 
-.pair-half {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-    column-gap: 6px;
-    row-gap: 1px;
+.pair-content {
+    display: flex;
     align-items: center;
-    padding: 4px 6px;
-    grid-row: 1;
+    flex: 1;
     min-width: 0;
-    height: 100%;
-    align-self: stretch;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(241, 245, 255, 0.72) 100%);
-    border-left: 3px solid var(--pair-color);
-    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+    justify-content: space-between;
 }
 
-.pair-half-a {
-    border-right: 1px solid rgba(15, 23, 42, 0.1);
-    border-bottom-left-radius: 12px;
+.pair-node {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
 }
 
-.pair-half-b { border-right: 1px solid rgba(15, 23, 42, 0.08); }
 
-.pair-resi {
-    grid-column: 1;
-    grid-row: 1;
-    font-family: var(--mono);
-    font-size: 12px;
+
+.pair-name {
+    font-family: var(--sans);
+    font-size: 11px;
     font-weight: 700;
     color: var(--text);
-    line-height: 1;
-}
-
-.pair-chain {
-    grid-column: 2;
-    grid-row: 1;
-    font-family: var(--sans);
-    font-size: 9px;
-    font-weight: 600;
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.55);
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    padding: 1px 4px;
-    border-radius: 999px;
-    justify-self: end;
-    line-height: 1;
-}
-
-.pair-mod {
-    grid-column: 1 / 3;
-    grid-row: 2;
-    font-family: var(--sans);
-    font-size: 10px;
-    color: var(--text-dim);
-    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.2;
-    margin-top: 2px;
-    min-width: 0;
-    max-width: 100%;
+    line-height: 1;
 }
 
-.pair-meta {
-    grid-column: 3;
-    grid-row: 1;
+.pair-divider {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    min-width: 70px;
+    position: relative;
+    padding: 0 10px;
+}
+
+.pair-divider::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(15, 23, 42, 0.12);
+    z-index: 1;
 }
 
 .pair-distance {
+    position: relative;
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 2px 6px;
+    border-radius: 6px;
     font-family: var(--mono);
     font-size: 10px;
     font-weight: 700;
-    color: var(--text);
+    color: var(--text-dim);
     white-space: nowrap;
+    border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .unlink-pair-btn {
@@ -980,13 +989,17 @@ select option { background: #f8fafc; color: #0f172a; }
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.7);
     color: var(--text);
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
     padding: 0;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .unlink-pair-btn:hover {
@@ -995,9 +1008,8 @@ select option { background: #f8fafc; color: #0f172a; }
     background: rgba(225, 29, 72, 0.12);
 }
 
-.li-resi { grid-column: 1; grid-row: 1; font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--text); line-height: 1; }
-.li-chain { grid-column: 2; grid-row: 1; font-family: var(--sans); font-size: 9px; font-weight: 700; color: var(--text); background: var(--accent-bg); padding: 2px 6px; border-radius: 999px; justify-self: end; line-height: 1; }
-.li-mod { grid-column: 1 / 3; grid-row: 2; font-family: var(--sans); font-size: 10px; color: var(--text-dim); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; margin-top: 4px; }
+.li-paper-name { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; min-width: 0; }
+.li-chain { grid-column: 2; grid-row: 1; font-family: var(--sans); font-size: 9px; font-weight: 700; color: var(--text); background: var(--accent-bg); padding: 2px 6px; border-radius: 999px; justify-self: end; line-height: 1; align-self: center; }
 
 #modList li.li-expanded {
     grid-template-rows: auto auto auto;
@@ -1006,7 +1018,7 @@ select option { background: #f8fafc; color: #0f172a; }
 
 .li-meta {
     grid-column: 1 / 3;
-    grid-row: 3;
+    grid-row: 2;
     display: none;
     margin-top: 6px;
     padding-top: 8px;

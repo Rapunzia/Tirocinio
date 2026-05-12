@@ -63,12 +63,12 @@ function buildMetadataRow(label, rawValue) {
 function buildMetadataMarkup(mod) {
     const evidenceSource = [mod.evidence, mod.source].filter(Boolean).join(' / ');
     const rows = [
-        buildMetadataRow('ref_mods', mod.ref_mods),
+        buildMetadataRow('database data', mod.ref_mods),
         buildMetadataRow('confidence', mod.confidence),
         buildMetadataRow('frequency', mod.frequency !== null ? mod.frequency.toFixed(3) : null),
-        buildMetadataRow('evidence/source', evidenceSource),
-        buildMetadataRow('xref', mod.xref),
-        buildMetadataRow('warnings', mod.warnings)
+        buildMetadataRow('evidence source', evidenceSource),
+        buildMetadataRow('cross-reference', mod.xref),
+        buildMetadataRow('warning', mod.warnings)
     ].filter(Boolean);
 
     if (!mod._isResolved) {
@@ -204,23 +204,35 @@ function createLinkedPairNode(pair) {
         ? `${pair.distanceAngstrom.toFixed(2)} Å`
         : 'Pending distance';
 
+    const formatPairName = (node) => {
+        if (!node || node.display === 'Unknown') return node.residue;
+        if (node.display.endsWith(' (ref)')) {
+            return `${node.display.replace(' (ref)', '')} ${node.residue} (db)`;
+        }
+        return `${node.display} ${node.residue}`;
+    };
+
+    const nameA = formatPairName(pair.a);
+    const nameB = formatPairName(pair.b);
+
+    item.style.setProperty('--pair-color-a', pair.a.colorHex);
+    item.style.setProperty('--pair-color-b', pair.b.colorHex);
+
     item.innerHTML = `
-        <div class="pair-meta">
-            <span class="pair-distance">${distanceText}</span>
-            <button class="unlink-pair-btn" type="button" data-pair-id="${pair.id}" aria-label="Unlink pair">
-                &times;
-            </button>
+        <div class="pair-content">
+            <div class="pair-node">
+                <span class="pair-name" title="${nameA}">${nameA}</span>
+            </div>
+            <div class="pair-divider">
+                <span class="pair-distance" title="Distance in Ångströms">${distanceText}</span>
+            </div>
+            <div class="pair-node">
+                <span class="pair-name" title="${nameB}">${nameB}</span>
+            </div>
         </div>
-        <div class="pair-half pair-half-a" style="--pair-color:${pair.a.colorHex}">
-            <span class="pair-resi">${pair.a.residue}</span>
-            <span class="pair-chain">${pair.a.type}</span>
-            <span class="pair-mod" title="${pair.a.display}">${pair.a.display}</span>
-        </div>
-        <div class="pair-half pair-half-b" style="--pair-color:${pair.b.colorHex}">
-            <span class="pair-resi">${pair.b.residue}</span>
-            <span class="pair-chain">${pair.b.type}</span>
-            <span class="pair-mod" title="${pair.b.display}">${pair.b.display}</span>
-        </div>
+        <button class="unlink-pair-btn" type="button" data-pair-id="${pair.id}" aria-label="Unlink pair">
+            &times;
+        </button>
     `;
 
     return item;
@@ -330,6 +342,20 @@ export function initModListSelectionHandler(selectionCallback) {
     });
 }
 
+export function selectCardForMod(mod) {
+    if (!mod || !mod._domNode) return;
+
+    const listElement = document.getElementById('modList');
+    collapseAllExpandedItems(listElement);
+    mod._domNode.classList.add('li-expanded');
+
+    if (appState.selectedListItem) appState.selectedListItem.classList.remove('selected');
+    mod._domNode.classList.add('selected');
+    appState.selectedListItem = mod._domNode;
+
+    mod._domNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 // Rebuilds the residue list markup from the hydrated modification objects.
 export function generateDOMList() {
     const listElement = document.getElementById('modList');
@@ -350,7 +376,7 @@ export function generateDOMList() {
     getSortedModifications().forEach((mod) => {
         const item = document.createElement('li');
         item.dataset.idx = mod._index;
-        item.style.borderLeftColor = mod._palette ? mod._palette.hex : '#CCCCCC';
+        item.style.setProperty('--card-color', mod._palette ? mod._palette.hex : '#CCCCCC');
 
         const metadataMarkup = buildMetadataMarkup(mod);
 
@@ -358,10 +384,30 @@ export function generateDOMList() {
             item.classList.add('li-absent');
         }
 
+        let statusIcon = '';
+        if (mod.status === 'match') {
+            statusIcon = '<span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Match: The modification matches the database."></span>';
+        } else if (mod.status === 'novel') {
+            statusIcon = '<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Novel: The modification is not in the database."></span>';
+        } else if (mod.status === 'missing') {
+            statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
+        }
+
+        let paperName = mod._displayResi;
+        if (mod._displayMod !== 'Unknown') {
+            if (mod._displayMod.endsWith(' (ref)')) {
+                paperName = `${mod._displayMod.replace(' (ref)', '')} ${mod._displayResi} (db)`;
+            } else {
+                paperName = `${mod._displayMod} ${mod._displayResi}`;
+            }
+        }
+
         item.innerHTML = `
-            <span class="li-resi">${mod._displayResi}</span>
+            <div class="li-paper-name">
+                ${statusIcon}
+                <span title="${paperName}">${paperName}</span>
+            </div>
             <span class="li-chain">${mod.chain}</span>
-            <span class="li-mod" title="${mod._displayMod}">${mod._displayMod}</span>
             ${metadataMarkup}
         `;
 
