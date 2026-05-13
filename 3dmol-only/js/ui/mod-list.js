@@ -75,8 +75,54 @@ function buildMetadataMarkup(mod) {
         rows.push('<div class="li-meta-row" style="grid-column: 1 / -1; color: var(--danger); font-weight: 600; padding-top: 4px;">Residue not resolved in 3D</div>');
     }
 
-    if (rows.length === 0) return '';
+    const noteKey = getResidueKey(mod);
+    const note = appState.customNotes && appState.customNotes.get(noteKey);
+    const noteDisplay = note ? 'block' : 'none';
+    const noteHtml = `
+<div class="li-note-row" style="display: ${noteDisplay}; grid-column: 1 / -1; ${rows.length > 0 ? 'margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(15, 23, 42, 0.16);' : ''}">
+    <div style="font-weight: 700; color: var(--text-mute); text-transform: uppercase; font-size: 9px; margin-bottom: 2px;">Notes</div>
+    <div class="li-note-text" style="white-space: pre-wrap; font-size: 10px; color: var(--text-dim); word-break: break-word; line-height: 1.3;">${escapeHtml(note || '')}</div>
+</div>`;
+
+    if (rows.length === 0 && !note) {
+        return '';
+    }
+
+    rows.push(noteHtml);
     return `<div class="li-meta">\n${rows.join('')}\n</div>`;
+}
+
+export function refreshResidueCard(mod) {
+    if (!mod || !mod._domNode) return;
+    
+    const residueKey = getResidueKey(mod);
+    const customColor = appState.customColors && appState.customColors.get(residueKey);
+    const colorToUse = customColor || (mod._palette ? mod._palette.hex : '#CCCCCC');
+    mod._domNode.style.setProperty('--card-color', colorToUse);
+    
+    const wasExpanded = mod._domNode.classList.contains('li-expanded');
+    
+    let statusIcon = '';
+    if (mod.status === 'match') {
+        statusIcon = '<span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Match: The modification matches the database."></span>';
+    } else if (mod.status === 'novel') {
+        statusIcon = '<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Novel: The modification is not in the database."></span>';
+    } else if (mod.status === 'missing') {
+        statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
+    }
+
+    const metadataMarkup = buildMetadataMarkup(mod);
+    
+    mod._domNode.innerHTML = `
+        <div class="li-paper-name">
+            ${statusIcon}
+            <span title="${mod._inspectorName}">${mod._inspectorName}</span>
+        </div>
+        <span class="li-chain">${mod.chain}</span>
+        ${metadataMarkup}
+    `;
+    
+    if (wasExpanded) mod._domNode.classList.add('li-expanded');
 }
 
 function collapseAllExpandedItems(listElement) {
@@ -325,7 +371,12 @@ export function initModListSelectionHandler(selectionCallback) {
         if (!item || item.classList.contains('empty-msg') || item.classList.contains('li-linked-pair')) return;
 
         const listElement = document.getElementById('modList');
-        const shouldExpand = !item.classList.contains('li-expanded');
+        const meta = item.querySelector('.li-meta');
+        
+        const isAlreadySelected = item.classList.contains('selected');
+        const isAlreadyExpanded = item.classList.contains('li-expanded');
+        const shouldExpand = meta && !isAlreadyExpanded;
+        
         collapseAllExpandedItems(listElement);
         if (shouldExpand) item.classList.add('li-expanded');
 
@@ -336,7 +387,7 @@ export function initModListSelectionHandler(selectionCallback) {
         const mod = appState.modifications[item.dataset.idx];
         if (!mod || !onResidueSelected) return;
 
-        if (mod._isResolved) {
+        if (mod._isResolved && !isAlreadySelected) {
             scheduleResidueSelection(mod, 'list');
         }
     });
@@ -376,7 +427,10 @@ export function generateDOMList() {
     getSortedModifications().forEach((mod) => {
         const item = document.createElement('li');
         item.dataset.idx = mod._index;
-        item.style.setProperty('--card-color', mod._palette ? mod._palette.hex : '#CCCCCC');
+        const residueKey = getResidueKey(mod);
+        const customColor = appState.customColors && appState.customColors.get(residueKey);
+        const colorToUse = customColor || (mod._palette ? mod._palette.hex : '#CCCCCC');
+        item.style.setProperty('--card-color', colorToUse);
 
         const metadataMarkup = buildMetadataMarkup(mod);
 
@@ -393,14 +447,7 @@ export function generateDOMList() {
             statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
         }
 
-        let paperName = mod._displayResi;
-        if (mod._displayMod !== 'Unknown') {
-            if (mod._displayMod.endsWith(' (ref)')) {
-                paperName = `${mod._displayMod.replace(' (ref)', '')} ${mod._displayResi} (db)`;
-            } else {
-                paperName = `${mod._displayMod} ${mod._displayResi}`;
-            }
-        }
+        const paperName = mod._inspectorName;
 
         item.innerHTML = `
             <div class="li-paper-name">

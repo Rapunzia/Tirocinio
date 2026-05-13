@@ -15,7 +15,8 @@ import {
     setFilterQuery,
     setFilterType,
     setSortMode,
-    selectCardForMod
+    selectCardForMod,
+    refreshResidueCard
 } from './ui/mod-list.js';
 import {
     clearAllMeasurementPairs,
@@ -683,23 +684,99 @@ function syncOverlayColorsToActiveMode() {
 
 function bindLabelTools() {
     document.getElementById('clearLabelsBtn').addEventListener('click', () => {
-        const changed = clearManualResidueLabels({ skipRender: true });
+        let changed = false;
+        if (appState.manualLabels.size > 0 || appState.customColors.size > 0 || appState.customStyles.size > 0) {
+            appState.manualLabels.clear();
+            appState.customColors.clear();
+            appState.customStyles.clear();
+            changed = true;
+        }
         scheduleInteractionUiRefresh();
-        if (changed) updateCurrentEngineStyles({ mode: 'overlay' });
-        showToast('All manual residue labels removed.');
+        if (changed) updateCurrentEngineStyles({ mode: 'full' });
+        showToast('All custom residue modifications removed.');
     });
 }
 
 function bindResidueContextMenu() {
+    // Block global context menu to prevent Edge default menu
+    document.body.addEventListener('contextmenu', (event) => {
+        if (!event.target.closest('textarea, input, [contenteditable="true"]')) {
+            event.preventDefault();
+        }
+    });
+
     const menu = document.getElementById('residueContextMenu');
     const insertLabelBtn = document.getElementById('menuInsertLabelBtn');
     const startMeasureBtn = document.getElementById('menuStartMeasureBtn');
+    const noteInput = document.getElementById('menuNoteInput');
     const viewer = document.getElementById('gldiv-3dmol');
 
-    if (!menu || !insertLabelBtn || !startMeasureBtn || !viewer) return;
+    if (!menu || !insertLabelBtn || !startMeasureBtn || !viewer || !noteInput) return;
+
+    // Auto-save notes
+    noteInput.addEventListener('input', () => {
+        if (!contextMenuResidue) return;
+        const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
+        const text = noteInput.value.trim();
+        
+        if (text) {
+            appState.customNotes.set(residueKey, text);
+        } else {
+            appState.customNotes.delete(residueKey);
+        }
+        
+        refreshResidueCard(contextMenuResidue);
+        updateInteractionPanels();
+    });
 
     viewer.addEventListener('contextmenu', (event) => {
         event.preventDefault();
+    });
+
+    menu.querySelectorAll('button[data-action="color"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (!contextMenuResidue) return;
+            const colorHex = btn.dataset.color;
+            const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
+            
+            if (colorHex === 'auto') {
+                appState.customColors.delete(residueKey);
+            } else {
+                appState.customColors.set(residueKey, colorHex);
+            }
+            
+            const colorToUse = colorHex === 'auto' ? contextMenuResidue._palette.hex : colorHex;
+            
+            if (appState.manualLabels.has(residueKey)) {
+                const payload = appState.manualLabels.get(residueKey);
+                payload.colorHex = colorToUse;
+            }
+            
+            if (contextMenuResidue._domNode) {
+                contextMenuResidue._domNode.style.setProperty('--card-color', colorToUse);
+            }
+            
+            closeResidueContextMenu();
+            updateCurrentEngineStyles({ mode: 'full' });
+            updateInteractionPanels();
+        });
+    });
+
+    menu.querySelectorAll('button[data-action="style"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (!contextMenuResidue) return;
+            const style = btn.dataset.style;
+            const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
+            
+            if (style === 'sphere') {
+                appState.customStyles.delete(residueKey);
+            } else {
+                appState.customStyles.set(residueKey, style);
+            }
+            
+            closeResidueContextMenu();
+            updateCurrentEngineStyles({ mode: 'full' });
+        });
     });
 
     insertLabelBtn.addEventListener('click', () => {
@@ -744,11 +821,34 @@ function openResidueContextMenu(mod, clientX, clientY) {
     if (!menu || !mod) return;
 
     contextMenuResidue = mod;
+    const residueKey = `${mod.resi}|${mod._authChain}`;
 
     if (insertLabelBtn) {
-        const residueKey = `${mod.resi}|${mod._authChain}`;
         const hasLabel = appState.manualLabels.has(residueKey);
-        insertLabelBtn.textContent = hasLabel ? 'Remove Label' : 'Add Label';
+        const icon = insertLabelBtn.querySelector('#menuLabelActiveIcon');
+        if (icon) {
+            icon.classList.toggle('opacity-0', !hasLabel);
+        }
+    }
+
+    const activeColor = appState.customColors.get(residueKey) || 'auto';
+    menu.querySelectorAll('button[data-action="color"]').forEach(btn => {
+        if (btn.dataset.color === activeColor) {
+            btn.classList.add('ring-2', 'ring-white', 'ring-offset-1', 'ring-offset-transparent');
+        } else {
+            btn.classList.remove('ring-2', 'ring-white', 'ring-offset-1', 'ring-offset-transparent');
+        }
+    });
+
+    const activeStyle = appState.customStyles.get(residueKey) || 'sphere';
+    menu.querySelectorAll('i[data-style-check]').forEach(icon => {
+        const styleName = icon.dataset.styleCheck;
+        icon.classList.toggle('opacity-0', styleName !== activeStyle);
+    });
+
+    const noteInput = document.getElementById('menuNoteInput');
+    if (noteInput) {
+        noteInput.value = appState.customNotes.get(residueKey) || '';
     }
 
     menu.classList.add('open');
@@ -804,7 +904,7 @@ function bindLegendControls() {
 
     setLegendExpandedHandler = setLegendExpanded;
     document.addEventListener('keydown', (event) => {
-        if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
+        if (event.target.closest('textarea, input, select, [contenteditable="true"]')) return;
         if (event.key === 'l' || event.key === 'L') setLegendExpanded(body.classList.contains('collapsed'));
     });
 }
@@ -874,6 +974,14 @@ function bindViewerToggles() {
     if (toggleIsolateUnknown) {
         toggleIsolateUnknown.addEventListener('change', () => {
             appState.isolateUnknownEnabled = toggleIsolateUnknown.checked;
+            updateCurrentEngineStyles();
+        });
+    }
+
+    const toggleIsolateCustom = document.getElementById('toggleIsolateCustom');
+    if (toggleIsolateCustom) {
+        toggleIsolateCustom.addEventListener('change', () => {
+            appState.isolateCustomEnabled = toggleIsolateCustom.checked;
             updateCurrentEngineStyles();
         });
     }
@@ -960,7 +1068,13 @@ function downloadTextFile(text, filename, mimeType) {
 }
 
 function updateInteractionPanels() {
-    const labelCount = appState.manualLabels.size;
+    const customKeys = new Set([
+        ...appState.manualLabels.keys(),
+        ...appState.customColors.keys(),
+        ...appState.customStyles.keys(),
+        ...appState.customNotes.keys()
+    ]);
+    const labelCount = customKeys.size;
     document.getElementById('labelCount').textContent = `${labelCount}`;
 
     const actionHint = document.getElementById('actionHint');

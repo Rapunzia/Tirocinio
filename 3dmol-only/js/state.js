@@ -10,6 +10,7 @@ export const appState = {
     selectedListItem: null,
     databaseOverlayEnabled: false,
     isolateUnknownEnabled: false,
+    isolateCustomEnabled: false,
     isPositionalOnly: false,
 
     ui: {
@@ -22,10 +23,13 @@ export const appState = {
 
     filterQuery: '',
     filterType: 'all',
-    sortMode: 'resi-asc',
+    sortMode: 'mod-first',
     filterDebounceId: null,
 
     manualLabels: new Map(),
+    customColors: new Map(),
+    customStyles: new Map(),
+    customNotes: new Map(),
     measurementDraft: {
         first: null,
         second: null

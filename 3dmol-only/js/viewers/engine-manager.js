@@ -315,9 +315,12 @@ function paint3DmolHoverResidue(mod) {
     const center = getResidueBoundingCenter(residue, mod._authChain);
     if (!center) return;
 
+    const customColor = appState.customColors && appState.customColors.get(residueKey);
+    const colorToUse = customColor || mod._palette.hex;
+
     hoverResidueLabel3Dmol = appState.viewer3Dmol.addLabel(
-        `${mod._displayMod} ${residue}`,
-        buildResidueLabelStyle(mod._palette.hex, {
+        mod._inspectorName || `${mod._displayMod} ${residue}`,
+        buildResidueLabelStyle(colorToUse, {
             scale: 0.95,
             alignment: 'topLeft',
             position: {
@@ -333,6 +336,8 @@ function paint3DmolHoverResidue(mod) {
 }
 
 function handle3DmolHoverIn(atom) {
+    if (isCameraAnimating) return;
+
     const mod = getSelectableModFromPickedAtom(atom);
     if (!mod) {
         if (hoverResidueLabel3Dmol) {
@@ -355,6 +360,7 @@ function handle3DmolHoverIn(atom) {
 }
 
 function handle3DmolHoverOut() {
+    if (isCameraAnimating) return;
     if (!hoverResidueLabel3Dmol) return;
     clear3DmolHoverResidue();
     requestHoverRender3Dmol();
@@ -380,6 +386,8 @@ export function set3DmolMeasureHoverEnabled(enabled) {
 
     return true;
 }
+
+let isCameraAnimating = false;
 
 function bind3DmolResiduePicking() {
     if (!appState.viewer3Dmol || hasBound3DmolPicking) return;
@@ -527,33 +535,33 @@ function addMeasurementOverlay(labelScale = 1) {
             : computeDistanceAngstrom(firstCenter, secondCenter);
         pair.distanceAngstrom = distance;
 
-        const line = appState.viewer3Dmol.addLine({
+        const line = appState.viewer3Dmol.addCylinder({
             start: firstCenter,
             end: secondCenter,
             color: '#0f172a',
+            radius: 0.15,
             dashed: true,
-            dashLength: 0.7,
-            gapLength: 0.3,
-            linewidth: 4
+            fromCap: 1,
+            toCap: 1
         });
         if (line) dynamicOverlayShapes3Dmol.push(line);
 
         const labelA = appState.viewer3Dmol.addLabel(
-            `${pair.a.display} ${pair.a.residue}`,
+            pair.a.inspectorName || `${pair.a.display} ${pair.a.residue}`,
             buildResidueLabelStyle(pair.a.colorHex, { scale: labelScale }),
             createResidueSelection(pair.a.residue, pair.a.authChain)
         );
         if (labelA) dynamicOverlayLabels3Dmol.push(labelA);
 
         const labelB = appState.viewer3Dmol.addLabel(
-            `${pair.b.display} ${pair.b.residue}`,
+            pair.b.inspectorName || `${pair.b.display} ${pair.b.residue}`,
             buildResidueLabelStyle(pair.b.colorHex, { scale: labelScale }),
             createResidueSelection(pair.b.residue, pair.b.authChain)
         );
         if (labelB) dynamicOverlayLabels3Dmol.push(labelB);
 
         const distanceLabel = appState.viewer3Dmol.addLabel(
-            `${distance.toFixed(2)} A`,
+            `${distance.toFixed(2)} Å`,
             buildResidueLabelStyle('#0f172a', {
                 scale: labelScale,
                 alignment: 'center',
@@ -600,15 +608,17 @@ export function toggleManualResidueLabel(mod) {
 
     const residue = mod.resi;
     const key = buildResidueKey(residue, mod._authChain);
+    const customColor = appState.customColors && appState.customColors.get(key);
+    const colorToUse = customColor || mod._palette.hex;
 
     if (appState.manualLabels.has(key)) {
         appState.manualLabels.delete(key);
     } else {
-        const payload = mod._labelPayload || {
+        const payload = {
             residue,
             authChain: mod._authChain,
-            colorHex: mod._palette.hex,
-            text: `${mod._displayMod} ${residue}`
+            colorHex: colorToUse,
+            text: mod._inspectorName || `${mod._displayMod} ${residue}`
         };
         mod._labelPayload = payload;
         appState.manualLabels.set(key, payload);
@@ -741,6 +751,13 @@ function apply3DmolAnnotationStyles() {
     const dualGroups = buildDualStyleGroups(appState.databaseOverlayEnabled, appState.isolateUnknownEnabled);
     const config = rnaConfig[appState.currentRibo];
 
+    const customKeys = new Set([
+        ...appState.manualLabels.keys(),
+        ...appState.customColors.keys(),
+        ...appState.customStyles.keys(),
+        ...appState.customNotes.keys()
+    ]);
+
     dualGroups.forEach((group) => {
         let chainDefaultColor = '#cccccc';
         if (config && config.chains) {
@@ -751,23 +768,97 @@ function apply3DmolAnnotationStyles() {
         }
 
         const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
-        appState.viewer3Dmol.setStyle(
-            { chain: group.chain, resi: group.resi },
-            {
-                cartoon: { color: chainDefaultColor, opacity: baseOpacity },
-                stick: { color: group.modColor, radius: 1.5, opacity: 1.0 }
-            }
-        );
+        
+        let customResi = group.resi;
+        let nonCustomResi = [];
+        
+        if (appState.isolateCustomEnabled) {
+            customResi = [];
+            group.resi.forEach(r => {
+                if (customKeys.has(`${r}|${group.chain}`)) {
+                    customResi.push(r);
+                } else {
+                    nonCustomResi.push(r);
+                }
+            });
+        }
 
-        if (appState.databaseOverlayEnabled && group.hasRefMods) {
-            appState.viewer3Dmol.addStyle(
-                { chain: group.chain, resi: group.resi, atom: "C1'" },
+        if (customResi.length > 0) {
+            appState.viewer3Dmol.setStyle(
+                { chain: group.chain, resi: customResi },
                 {
-                    sphere: { color: group.refColor, radius: 2.5, wireframe: false, opacity: 1.0 }
+                    cartoon: { color: chainDefaultColor, opacity: baseOpacity },
+                    sphere: { color: group.modColor, radius: 2.0, opacity: 1.0 }
                 }
             );
         }
+
+        if (nonCustomResi.length > 0) {
+            appState.viewer3Dmol.setStyle(
+                { chain: group.chain, resi: nonCustomResi },
+                {
+                    cartoon: { color: chainDefaultColor, opacity: baseOpacity }
+                }
+            );
+        }
+
+        if (appState.databaseOverlayEnabled && group.hasRefMods) {
+            const overlayResi = appState.isolateCustomEnabled ? customResi : group.resi;
+            if (overlayResi.length > 0) {
+                appState.viewer3Dmol.addStyle(
+                    { chain: group.chain, resi: overlayResi, atom: "C1'" },
+                    {
+                        sphere: { color: group.refColor, radius: 2.5, wireframe: false, opacity: 1.0 }
+                    }
+                );
+            }
+        }
     });
+
+    if (appState.customColors && appState.customStyles && (appState.customColors.size > 0 || appState.customStyles.size > 0)) {
+        const processedKeys = new Set([...appState.customColors.keys(), ...appState.customStyles.keys()]);
+        
+        processedKeys.forEach(key => {
+            const [resiStr, chain] = key.split('|');
+            let chainDefaultColor = '#cccccc';
+            if (config && config.chains) {
+                const chainConfig = Object.values(config.chains).find(c => c.auth === chain);
+                if (chainConfig && chainConfig.defaultColor) {
+                    chainDefaultColor = chainConfig.defaultColor;
+                }
+            }
+            const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
+            
+            const mod = appState.modifications.find(m => String(m.resi) === resiStr && m._authChain === chain);
+            const modColor = mod ? mod._palette.hex : chainDefaultColor;
+            
+            const customColor = appState.customColors.get(key) || modColor;
+            const customStyle = appState.customStyles.get(key) || 'sphere';
+
+            const styleObj = {
+                cartoon: { color: chainDefaultColor, opacity: baseOpacity }
+            };
+
+            if (customStyle === 'stick') {
+                styleObj.stick = { color: customColor, opacity: 1.0 };
+            } else if (customStyle === 'sphere') {
+                styleObj.sphere = { color: customColor, radius: 2.0, opacity: 1.0 };
+            } else if (customStyle === 'cartoon') {
+                styleObj.cartoon = { color: customColor, opacity: 1.0 };
+            }
+
+            appState.viewer3Dmol.setStyle({ chain, resi: resiStr }, styleObj);
+
+            if (appState.databaseOverlayEnabled && mod && mod.ref_mods && mod.ref_mods.length > 0) {
+                appState.viewer3Dmol.addStyle(
+                    { chain, resi: resiStr, atom: "C1'" },
+                    {
+                        sphere: { color: mod._databasePalette.hex, radius: 2.5, wireframe: false, opacity: 1.0 }
+                    }
+                );
+            }
+        });
+    }
 }
 
 export function refresh3DmolProteinsOnly() {
@@ -829,7 +920,9 @@ export function centerOnResidue(resi, authChain) {
 
     const selection = { chain: authChain, resi: resi.toString() };
 
+    isCameraAnimating = true;
     appState.viewer3Dmol.zoomTo(selection, 750);
+    setTimeout(() => { isCameraAnimating = false; }, 800);
 
     if (focusPulseTimer3Dmol) {
         clearTimeout(focusPulseTimer3Dmol);
@@ -840,8 +933,6 @@ export function centerOnResidue(resi, authChain) {
         appState.viewer3Dmol.removeShape(focusPulseShape3Dmol);
         focusPulseShape3Dmol = null;
     }
-
-    appState.viewer3Dmol.render();
 }
 
 export function centerOnMeasurementPair(pair) {
@@ -854,15 +945,17 @@ export function centerOnMeasurementPair(pair) {
         ]
     };
 
+    isCameraAnimating = true;
     appState.viewer3Dmol.zoomTo(selection, 750);
-    appState.viewer3Dmol.render();
+    setTimeout(() => { isCameraAnimating = false; }, 800);
 }
 
 export function resetCameraView() {
     if (!appState.viewer3Dmol) return { ok: false, reason: 'viewer' };
 
+    isCameraAnimating = true;
     appState.viewer3Dmol.zoomTo(undefined, 750);
-    appState.viewer3Dmol.render();
+    setTimeout(() => { isCameraAnimating = false; }, 800);
     return { ok: true, reason: 'ok' };
 }
 

@@ -229,7 +229,7 @@ function buildLabelPayload(modification) {
         residue: modification.resi,
         authChain: modification._authChain,
         colorHex: activePalette.hex,
-        text: `${modification._displayMod} ${modification.resi}`
+        text: modification._inspectorName
     };
 }
 
@@ -242,6 +242,7 @@ function buildMeasurementSlot(modification) {
         structId: modification._structId,
         type: modification.chain,
         display: modification._displayMod,
+        inspectorName: modification._inspectorName,
         colorHex: activePalette.hex,
         center: null
     };
@@ -405,6 +406,17 @@ export function hydrateModifications() {
             : (modification.ref_mods.length > 0
                 ? `${formatModificationText(modification.ref_mods)} (ref)`
                 : 'Unknown');
+
+        let inspectorName = modification._displayResi;
+        if (modification._displayMod !== 'Unknown') {
+            if (modification._displayMod.endsWith(' (ref)')) {
+                inspectorName = `${modification._displayMod.replace(' (ref)', '')} ${modification._displayResi} (db)`;
+            } else {
+                inspectorName = `${modification._displayMod} ${modification._displayResi}`;
+            }
+        }
+        modification._inspectorName = inspectorName;
+
         modification._residueKey = buildResidueKey(modification.resi, modification._authChain);
         modification._labelPayload = buildLabelPayload(modification);
         modification._measurementSlot = buildMeasurementSlot(modification);
