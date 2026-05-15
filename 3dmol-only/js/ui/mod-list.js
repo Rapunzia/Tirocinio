@@ -97,28 +97,44 @@ export function refreshResidueCard(mod) {
     
     const residueKey = getResidueKey(mod);
     const customColor = appState.customColors && appState.customColors.get(residueKey);
-    const colorToUse = customColor || (mod._palette ? mod._palette.hex : '#CCCCCC');
+    
+    let colorToUse;
+    if (appState.isPositionalOnly) {
+        colorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+    } else {
+        colorToUse = mod._perModPalette ? mod._perModPalette.hex : mod._analyticPalette.hex;
+    }
+    if (customColor) colorToUse = customColor;
+    
     mod._domNode.style.setProperty('--card-color', colorToUse);
+
+    const refColorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+    mod._domNode.style.setProperty('--card-color-ref', refColorToUse);
     
     const wasExpanded = mod._domNode.classList.contains('li-expanded');
     
-    let statusIcon = '';
+    let chainClasses = 'li-chain ';
+    let chainTitle = '';
     if (mod.status === 'match') {
-        statusIcon = '<span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Match: The modification matches the database."></span>';
+        chainClasses += 'bg-green-500/20 text-green-700 border border-transparent';
+        chainTitle = 'Match: The modification matches the database.';
     } else if (mod.status === 'novel') {
-        statusIcon = '<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Novel: The modification is not in the database."></span>';
+        chainClasses += 'bg-red-500/20 text-red-700 border border-transparent';
+        chainTitle = 'Novel: The modification is not in the database.';
     } else if (mod.status === 'missing') {
-        statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
+        chainClasses += 'border border-dashed border-gray-400 text-gray-500 bg-transparent';
+        chainTitle = 'Missing: Expected modification not found.';
+    } else {
+        chainClasses += 'bg-gray-500/20 text-gray-700 border border-transparent';
     }
 
     const metadataMarkup = buildMetadataMarkup(mod);
     
     mod._domNode.innerHTML = `
         <div class="li-paper-name">
-            ${statusIcon}
             <span title="${mod._inspectorName}">${mod._inspectorName}</span>
         </div>
-        <span class="li-chain">${mod.chain}</span>
+        <span class="${chainClasses}" title="${chainTitle}">${mod.chain}</span>
         ${metadataMarkup}
     `;
     
@@ -429,8 +445,19 @@ export function generateDOMList() {
         item.dataset.idx = mod._index;
         const residueKey = getResidueKey(mod);
         const customColor = appState.customColors && appState.customColors.get(residueKey);
-        const colorToUse = customColor || (mod._palette ? mod._palette.hex : '#CCCCCC');
+
+        let colorToUse;
+        if (appState.isPositionalOnly) {
+            colorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+        } else {
+            colorToUse = mod._perModPalette ? mod._perModPalette.hex : mod._analyticPalette.hex;
+        }
+        if (customColor) colorToUse = customColor;
+
         item.style.setProperty('--card-color', colorToUse);
+
+        const refColorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+        item.style.setProperty('--card-color-ref', refColorToUse);
 
         const metadataMarkup = buildMetadataMarkup(mod);
 
@@ -438,23 +465,28 @@ export function generateDOMList() {
             item.classList.add('li-absent');
         }
 
-        let statusIcon = '';
+        let chainClasses = 'li-chain ';
+        let chainTitle = '';
         if (mod.status === 'match') {
-            statusIcon = '<span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Match: The modification matches the database."></span>';
+            chainClasses += 'bg-green-500/20 text-green-700 border border-transparent';
+            chainTitle = 'Match: The modification matches the database.';
         } else if (mod.status === 'novel') {
-            statusIcon = '<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Novel: The modification is not in the database."></span>';
+            chainClasses += 'bg-red-500/20 text-red-700 border border-transparent';
+            chainTitle = 'Novel: The modification is not in the database.';
         } else if (mod.status === 'missing') {
-            statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
+            chainClasses += 'border border-dashed border-gray-400 text-gray-500 bg-transparent';
+            chainTitle = 'Missing: Expected modification not found.';
+        } else {
+            chainClasses += 'bg-gray-500/20 text-gray-700 border border-transparent';
         }
 
         const paperName = mod._inspectorName;
 
         item.innerHTML = `
             <div class="li-paper-name">
-                ${statusIcon}
                 <span title="${paperName}">${paperName}</span>
             </div>
-            <span class="li-chain">${mod.chain}</span>
+            <span class="${chainClasses}" title="${chainTitle}">${mod.chain}</span>
             ${metadataMarkup}
         `;
 

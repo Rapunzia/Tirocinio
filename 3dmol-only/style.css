@@ -880,11 +880,12 @@ select option { background: #f8fafc; color: #0f172a; }
     top: -1px;
     bottom: -1px;
     left: -1px;
-    width: 16px;
-    border-radius: 12px 0 0 12px;
+    right: -1px;
+    border-radius: 12px;
     border: 0 solid transparent;
-    border-left-width: 4px;
-    background: var(--card-color, #CCCCCC) border-box;
+    border-right-width: 4px;
+    border-bottom-width: 4px;
+    background: linear-gradient(to right, var(--card-color, #CCCCCC) 0%, var(--card-color, #CCCCCC) calc(100% - 55px), var(--card-color-ref, var(--card-color, #CCCCCC)) calc(100% - 15px), var(--card-color-ref, var(--card-color, #CCCCCC)) 100%) border-box;
     -webkit-mask: 
         linear-gradient(#fff 0 0) padding-box, 
         linear-gradient(#fff 0 0) border-box;
@@ -915,7 +916,7 @@ select option { background: #f8fafc; color: #0f172a; }
 }
 
 #modList li.li-linked-pair::before {
-    background: linear-gradient(180deg, var(--pair-color-a) 0%, var(--pair-color-b) 100%) border-box;
+    background: linear-gradient(to right, var(--pair-color-a) 0%, var(--pair-color-a) calc(100% - 55px), var(--pair-color-b) calc(100% - 15px), var(--pair-color-b) 100%) border-box;
 }
 
 #modList li.li-linked-pair:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(255, 255, 255, 0.85); }
@@ -1007,7 +1008,7 @@ select option { background: #f8fafc; color: #0f172a; }
 }
 
 .li-paper-name { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; min-width: 0; }
-.li-chain { grid-column: 2; grid-row: 1; font-family: var(--sans); font-size: 9px; font-weight: 700; color: var(--text); background: var(--accent-bg); padding: 2px 6px; border-radius: 999px; justify-self: end; line-height: 1; align-self: center; }
+.li-chain { grid-column: 2; grid-row: 1; font-family: var(--sans); font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 999px; justify-self: end; line-height: 1; align-self: center; }
 
 #modList li.li-expanded {
     grid-template-rows: auto auto auto;

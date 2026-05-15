@@ -8,7 +8,7 @@ export const appState = {
     modifications: [],
     currentOpacity: 0.7,
     selectedListItem: null,
-    databaseOverlayEnabled: false,
+    statusOverlayEnabled: false,
     isolateUnknownEnabled: false,
     isolateCustomEnabled: false,
     isPositionalOnly: false,

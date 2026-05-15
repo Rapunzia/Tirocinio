@@ -1,19 +1,19 @@
 // Color palette used to classify and render modification domains.
 export const modPalette = {
     standard: { hex: '#CCCCCC', rgb: { r: 204, g: 204, b: 204 } },
-    varI: { hex: '#00E676', rgb: { r: 0, g: 230, b: 118 } },
-    varR: { hex: '#2979FF', rgb: { r: 41, g: 121, b: 255 } },
-    varB: { hex: '#FF1744', rgb: { r: 255, g: 23, b: 68 } },
-    varBR: { hex: '#D500F9', rgb: { r: 213, g: 0, b: 249 } },
-    varIR: { hex: '#00E5FF', rgb: { r: 0, g: 229, b: 255 } },
-    complex: { hex: '#FF9100', rgb: { r: 255, g: 145, b: 0 } },
-    hyper: { hex: '#222222', rgb: { r: 34, g: 34, b: 34 } },
-    unannotated: { hex: '#F0E442', rgb: { r: 240, g: 228, b: 66 } }
+    varI: { hex: '#f28200', rgb: { r: 242, g: 130, b: 0 } },       
+    varR: { hex: '#ffdb28', rgb: { r: 255, g: 219, b: 40 } },      
+    varB: { hex: '#00e1da', rgb: { r: 0, g: 225, b: 218 } },      
+    varBR: { hex: '#007bd8', rgb: { r: 0, g: 123, b: 216 } },     
+    varIR: { hex: '#8f2be7', rgb: { r: 143, g: 43, b: 231 } },     
+    complex: { hex: '#fb4fd9', rgb: { r: 251, g: 79, b: 217 } },      
+    hyper: { hex: '#000075', rgb: { r: 0, g: 0, b: 117 } },      
+    unannotated: { hex: '#A9A9A9', rgb: { r: 169, g: 169, b: 169 } } 
 };
 
 export const statusPalette = {
-    match: { hex: '#22c55e', rgb: { r: 34, g: 197, b: 94 } },
-    novel: { hex: '#ef4444', rgb: { r: 239, g: 68, b: 68 } },
+    match: { hex: '#1fb819', rgb: { r: 31, g: 184, b: 25 } },
+    novel: { hex: '#e9162d', rgb: { r: 233, g: 22, b: 45 } },
     missing: { hex: '#fca5a5', rgb: { r: 252, g: 165, b: 165 } },
     fallback: { hex: '#9ca3af', rgb: { r: 156, g: 163, b: 175 } }
 };

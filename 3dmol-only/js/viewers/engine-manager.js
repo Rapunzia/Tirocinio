@@ -769,6 +769,23 @@ function apply3DmolAnnotationStyles() {
 
         const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
         
+        let labelResStyle = null;
+        if (appState.statusOverlayEnabled) {
+            let bgColor = statusPalette[group.status] ? statusPalette[group.status].hex : statusPalette.fallback.hex;
+            if (group.status === 'missing') bgColor = '#ffffff';
+            
+            const borderColor = darkenHex(bgColor, 50);
+
+            labelResStyle = {
+                alignment: 'center',
+                backgroundColor: bgColor,
+                fontSize: 1,
+                fontOpacity: 0,
+                borderThickness: 1,
+                borderColor: borderColor
+            };
+        }
+        
         let customResi = group.resi;
         let nonCustomResi = [];
         
@@ -802,6 +819,10 @@ function apply3DmolAnnotationStyles() {
             );
         }
 
+        if (labelResStyle) {
+            appState.viewer3Dmol.addResLabels({ chain: group.chain, resi: group.resi }, labelResStyle);
+        }
+
         if (appState.databaseOverlayEnabled && group.hasRefMods) {
             const overlayResi = appState.isolateCustomEnabled ? customResi : group.resi;
             if (overlayResi.length > 0) {
@@ -815,7 +836,7 @@ function apply3DmolAnnotationStyles() {
         }
     });
 
-    if (appState.customColors && appState.customStyles && (appState.customColors.size > 0 || appState.customStyles.size > 0)) {
+    if (appState.customColors.size > 0 || appState.customStyles.size > 0) {
         const processedKeys = new Set([...appState.customColors.keys(), ...appState.customStyles.keys()]);
         
         processedKeys.forEach(key => {
@@ -823,7 +844,7 @@ function apply3DmolAnnotationStyles() {
             let chainDefaultColor = '#cccccc';
             if (config && config.chains) {
                 const chainConfig = Object.values(config.chains).find(c => c.auth === chain);
-                if (chainConfig && chainConfig.defaultColor) {
+                if (chainConfig) {
                     chainDefaultColor = chainConfig.defaultColor;
                 }
             }
@@ -831,10 +852,9 @@ function apply3DmolAnnotationStyles() {
             
             const mod = appState.modifications.find(m => String(m.resi) === resiStr && m._authChain === chain);
             const modColor = mod ? mod._palette.hex : chainDefaultColor;
-            
             const customColor = appState.customColors.get(key) || modColor;
             const customStyle = appState.customStyles.get(key) || 'sphere';
-
+            
             const styleObj = {
                 cartoon: { color: chainDefaultColor, opacity: baseOpacity }
             };
@@ -849,13 +869,22 @@ function apply3DmolAnnotationStyles() {
 
             appState.viewer3Dmol.setStyle({ chain, resi: resiStr }, styleObj);
 
-            if (appState.databaseOverlayEnabled && mod && mod.ref_mods && mod.ref_mods.length > 0) {
-                appState.viewer3Dmol.addStyle(
-                    { chain, resi: resiStr, atom: "C1'" },
-                    {
-                        sphere: { color: mod._databasePalette.hex, radius: 2.5, wireframe: false, opacity: 1.0 }
-                    }
-                );
+            if (appState.statusOverlayEnabled && mod) {
+                const status = mod.status || 'fallback';
+                let finalBgColor = statusPalette[status] ? statusPalette[status].hex : statusPalette.fallback.hex;
+                if (status === 'missing') finalBgColor = '#ffffff';
+                const finalBorderColor = darkenHex(finalBgColor, 50);
+
+                const customLabelResStyle = {
+                    alignment: 'center',
+                    backgroundColor: finalBgColor,
+                    fontSize: 1,
+                    fontOpacity: 0,
+                    borderThickness: 1,
+                    borderColor: finalBorderColor
+                };
+                
+                appState.viewer3Dmol.addResLabels({ chain, resi: resiStr }, customLabelResStyle);
             }
         });
     }
@@ -1017,4 +1046,39 @@ export function exportSnapshot() {
             apply3DmolStyles();
         }
     }, 100);
+}
+export function refresh3DmolProteinsOnly() {
+    if (!appState.viewer3Dmol) return false;
+
+    const config = rnaConfig[appState.currentRibo];
+    if (!config || !config.chains) return false;
+
+    const showProteins = document.getElementById('toggleProteins')?.checked !== false;
+    const rnaChains = Object.values(config.chains)
+        .map((chainConfig) => chainConfig.auth)
+        .filter(Boolean);
+
+    if (rnaChains.length > 0) {
+        const proteinSelection = { not: { chain: rnaChains } };
+        const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
+        if (showProteins) {
+            appState.viewer3Dmol.setStyle(proteinSelection, {
+                cartoon: { color: '#E0E0E0', opacity: baseOpacity }
+            });
+        } else {
+            appState.viewer3Dmol.setStyle(proteinSelection, {});
+        }
+    }
+
+    appState.viewer3Dmol.render();
+    return true;
+}
+
+function darkenHex(hex, percent) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = (num >> 16) - amt;
+    const G = (num >> 8 & 0x00FF) - amt;
+    const B = (num & 0x0000FF) - amt;
+    return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
 }
