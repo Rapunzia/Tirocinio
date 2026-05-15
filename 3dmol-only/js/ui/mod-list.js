@@ -8,6 +8,8 @@ let pendingResidueSelectionMod = null;
 
 let residueModByKey = new Map();
 let previousMarkerState = null;
+let onResidueHideToggle = null;
+let onCardEditClick = null;
 
 function scheduleResidueSelection(mod, source = 'list') {
     pendingResidueSelectionMod = mod;
@@ -97,32 +99,63 @@ export function refreshResidueCard(mod) {
     
     const residueKey = getResidueKey(mod);
     const customColor = appState.customColors && appState.customColors.get(residueKey);
-    const colorToUse = customColor || (mod._palette ? mod._palette.hex : '#CCCCCC');
+    
+    let colorToUse;
+    if (appState.isPositionalOnly) {
+        colorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+    } else {
+        colorToUse = mod._perModPalette ? mod._perModPalette.hex : mod._analyticPalette.hex;
+    }
+    if (customColor) colorToUse = customColor;
+    
     mod._domNode.style.setProperty('--card-color', colorToUse);
+
+    const refColorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+    mod._domNode.style.setProperty('--card-color-ref', refColorToUse);
     
     const wasExpanded = mod._domNode.classList.contains('li-expanded');
     
-    let statusIcon = '';
+    let chainClasses = 'li-chain ';
+    let chainTitle = '';
     if (mod.status === 'match') {
-        statusIcon = '<span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Match: The modification matches the database."></span>';
+        chainClasses += 'bg-green-500/20 text-green-700 border border-transparent';
+        chainTitle = 'Match: The modification matches the database.';
     } else if (mod.status === 'novel') {
-        statusIcon = '<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Novel: The modification is not in the database."></span>';
+        chainClasses += 'bg-red-500/20 text-red-700 border border-transparent';
+        chainTitle = 'Novel: The modification is not in the database.';
     } else if (mod.status === 'missing') {
-        statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
+        chainClasses += 'border border-dashed border-gray-400 text-gray-500 bg-transparent';
+        chainTitle = 'Missing: Expected modification not found.';
+    } else {
+        chainClasses += 'bg-gray-500/20 text-gray-700 border border-transparent';
     }
 
     const metadataMarkup = buildMetadataMarkup(mod);
+
+    const isHidden = appState.hiddenResidues && appState.hiddenResidues.has(residueKey);
+    const eyeIconClass = isHidden ? 'fa-eye' : 'fa-eye-slash';
+    const eyeTitle = isHidden ? 'Show residue' : 'Hide residue';
     
     mod._domNode.innerHTML = `
+        <div class="card-actions">
+            <button class="card-action-btn card-edit-btn" type="button" title="Edit residue" aria-label="Edit">
+                <i class="fa-solid fa-pen" aria-hidden="true"></i>
+            </button>
+            <button class="card-action-btn card-hide-btn" type="button" title="${eyeTitle}" aria-label="${eyeTitle}">
+                <i class="fa-solid ${eyeIconClass}" aria-hidden="true"></i>
+            </button>
+        </div>
         <div class="li-paper-name">
-            ${statusIcon}
             <span title="${mod._inspectorName}">${mod._inspectorName}</span>
         </div>
-        <span class="li-chain">${mod.chain}</span>
+        <span class="${chainClasses}" title="${chainTitle}">${mod.chain}</span>
         ${metadataMarkup}
     `;
     
     if (wasExpanded) mod._domNode.classList.add('li-expanded');
+
+    // Refresh hidden state
+    mod._domNode.classList.toggle('li-absent', isHidden || !mod._isResolved);
 }
 
 function collapseAllExpandedItems(listElement) {
@@ -303,6 +336,14 @@ export function prependMeasurementPairNode(pair) {
 
     removeStaticEmptyMessageIfPresent(listElement);
     listElement.insertBefore(createLinkedPairNode(pair), listElement.firstChild);
+
+    // Also add to measurement tab
+    const measurementList = document.getElementById('measurementList');
+    if (measurementList) {
+        const measureEmpty = measurementList.querySelector('.empty-msg');
+        if (measureEmpty) measureEmpty.remove();
+        measurementList.insertBefore(createLinkedPairNode(pair), measurementList.firstChild);
+    }
 }
 
 export function removeMeasurementPairNode(pairId) {
@@ -312,6 +353,16 @@ export function removeMeasurementPairNode(pairId) {
     const pairNode = listElement.querySelector(`.li-linked-pair[data-pair-id="${pairId}"]`);
     if (!pairNode) return;
     pairNode.remove();
+
+    // Also remove from measurement tab
+    const measurementList = document.getElementById('measurementList');
+    if (measurementList) {
+        const measurePairNode = measurementList.querySelector(`.li-linked-pair[data-pair-id="${pairId}"]`);
+        if (measurePairNode) measurePairNode.remove();
+        if (appState.measurementPairs.length === 0) {
+            measurementList.innerHTML = '<li class="empty-msg">No measurement pairs.</li>';
+        }
+    }
 
     if (appState.modifications.length === 0 && appState.measurementPairs.length === 0) {
         listElement.innerHTML = '<li class="empty-msg">Load files to see residues...</li>';
@@ -352,6 +403,27 @@ export function initModListSelectionHandler(selectionCallback) {
     onResidueSelected = selectionCallback;
 
     document.getElementById('modList').addEventListener('click', (event) => {
+        const hideBtn = event.target.closest('.card-hide-btn');
+        if (hideBtn) {
+            const item = hideBtn.closest('li');
+            if (!item) return;
+            const mod = appState.modifications[item.dataset.idx];
+            if (mod && onResidueHideToggle) onResidueHideToggle(mod);
+            return;
+        }
+
+        const editBtn = event.target.closest('.card-edit-btn');
+        if (editBtn) {
+            const item = editBtn.closest('li');
+            if (!item) return;
+            const mod = appState.modifications[item.dataset.idx];
+            if (mod && onCardEditClick) {
+                const rect = item.getBoundingClientRect();
+                onCardEditClick(mod, rect);
+            }
+            return;
+        }
+
         const unlinkButton = event.target.closest('.unlink-pair-btn');
         if (unlinkButton) {
             const pairId = Number(unlinkButton.dataset.pairId);
@@ -418,10 +490,39 @@ export function generateDOMList() {
         fragment.appendChild(createLinkedPairNode(pair));
     });
 
+    // Populate measurement tab
+    const measurementList = document.getElementById('measurementList');
+    if (measurementList) {
+        measurementList.innerHTML = '';
+        if (appState.measurementPairs.length > 0) {
+            const measureFrag = document.createDocumentFragment();
+            appState.measurementPairs.forEach((pair) => {
+                measureFrag.appendChild(createLinkedPairNode(pair));
+            });
+            measurementList.appendChild(measureFrag);
+        } else {
+            measurementList.innerHTML = '<li class="empty-msg">No measurement pairs.</li>';
+        }
+    }
+
     if (appState.modifications.length === 0 && appState.measurementPairs.length === 0) {
         listElement.innerHTML = '<li class="empty-msg">Load files to see residues...</li>';
         document.getElementById('residueCount').textContent = '\u2014';
         return;
+    }
+
+    const toggleContainer = document.getElementById('statusOverlayToggleContainer');
+    if (toggleContainer) {
+        if (appState.isPositionalOnly) {
+            toggleContainer.style.display = 'none';
+            if (appState.statusOverlayEnabled) {
+                appState.statusOverlayEnabled = false;
+                const toggle = document.getElementById('toggleStatusOverlay');
+                if (toggle) toggle.checked = false;
+            }
+        } else {
+            toggleContainer.style.display = '';
+        }
     }
 
     getSortedModifications().forEach((mod) => {
@@ -429,8 +530,19 @@ export function generateDOMList() {
         item.dataset.idx = mod._index;
         const residueKey = getResidueKey(mod);
         const customColor = appState.customColors && appState.customColors.get(residueKey);
-        const colorToUse = customColor || (mod._palette ? mod._palette.hex : '#CCCCCC');
+        
+        let colorToUse;
+        if (appState.isPositionalOnly) {
+            colorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+        } else {
+            colorToUse = mod._perModPalette ? mod._perModPalette.hex : mod._analyticPalette.hex;
+        }
+        if (customColor) colorToUse = customColor;
+        
         item.style.setProperty('--card-color', colorToUse);
+
+        const refColorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+        item.style.setProperty('--card-color-ref', refColorToUse);
 
         const metadataMarkup = buildMetadataMarkup(mod);
 
@@ -438,25 +550,45 @@ export function generateDOMList() {
             item.classList.add('li-absent');
         }
 
-        let statusIcon = '';
+        let chainClasses = 'li-chain ';
+        let chainTitle = '';
         if (mod.status === 'match') {
-            statusIcon = '<span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Match: The modification matches the database."></span>';
+            chainClasses += 'bg-green-500/20 text-green-700 border border-transparent';
+            chainTitle = 'Match: The modification matches the database.';
         } else if (mod.status === 'novel') {
-            statusIcon = '<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Novel: The modification is not in the database."></span>';
+            chainClasses += 'bg-red-500/20 text-red-700 border border-transparent';
+            chainTitle = 'Novel: The modification is not in the database.';
         } else if (mod.status === 'missing') {
-            statusIcon = '<span class="w-2 h-2 rounded-full border border-dotted border-gray-400 flex-shrink-0" title="Missing: Expected modification not found."></span>';
+            chainClasses += 'border border-dashed border-gray-400 text-gray-500 bg-transparent';
+            chainTitle = 'Missing: Expected modification not found.';
+        } else {
+            chainClasses += 'bg-gray-500/20 text-gray-700 border border-transparent';
         }
 
         const paperName = mod._inspectorName;
+        const isHidden = appState.hiddenResidues && appState.hiddenResidues.has(residueKey);
+        const eyeIconClass = isHidden ? 'fa-eye' : 'fa-eye-slash';
+        const eyeTitle = isHidden ? 'Show residue' : 'Hide residue';
 
         item.innerHTML = `
+            <div class="card-actions">
+                <button class="card-action-btn card-edit-btn" type="button" title="Edit residue" aria-label="Edit">
+                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                </button>
+                <button class="card-action-btn card-hide-btn" type="button" title="${eyeTitle}" aria-label="${eyeTitle}">
+                    <i class="fa-solid ${eyeIconClass}" aria-hidden="true"></i>
+                </button>
+            </div>
             <div class="li-paper-name">
-                ${statusIcon}
                 <span title="${paperName}">${paperName}</span>
             </div>
-            <span class="li-chain">${mod.chain}</span>
+            <span class="${chainClasses}" title="${chainTitle}">${mod.chain}</span>
             ${metadataMarkup}
         `;
+
+        if (isHidden) {
+            item.classList.add('li-absent');
+        }
 
         mod._domNode = item;
         applyInteractionMarkersForItem(mod);
@@ -467,6 +599,7 @@ export function generateDOMList() {
     rebuildResidueModIndex();
     resetMarkerStateCache();
     applyFilters();
+    buildCustomList();
 }
 
 // Applies active search/type filters without rebuilding the full list.
@@ -521,4 +654,202 @@ export function setMeasurementPairUnlinkHandler(handler) {
 
 export function setMeasurementPairSelectionHandler(handler) {
     onMeasurementPairSelected = handler;
+}
+
+export function setResidueHideToggleHandler(handler) {
+    onResidueHideToggle = handler;
+}
+
+export function setCardEditHandler(handler) {
+    onCardEditClick = handler;
+}
+
+export function toggleResidueHidden(mod) {
+    if (!mod) return false;
+    const residueKey = getResidueKey(mod);
+    const isHidden = appState.hiddenResidues.has(residueKey);
+
+    if (isHidden) {
+        appState.hiddenResidues.delete(residueKey);
+    } else {
+        appState.hiddenResidues.add(residueKey);
+    }
+
+    if (mod._domNode) {
+        const nowHidden = appState.hiddenResidues.has(residueKey);
+        mod._domNode.classList.toggle('li-absent', nowHidden || !mod._isResolved);
+
+        // Update eye icon on the card
+        const hideBtn = mod._domNode.querySelector('.card-hide-btn');
+        if (hideBtn) {
+            const icon = hideBtn.querySelector('i');
+            if (icon) {
+                icon.classList.toggle('fa-eye', nowHidden);
+                icon.classList.toggle('fa-eye-slash', !nowHidden);
+            }
+            hideBtn.title = nowHidden ? 'Show residue' : 'Hide residue';
+            hideBtn.setAttribute('aria-label', hideBtn.title);
+        }
+    }
+
+    buildCustomList();
+    return !isHidden;
+}
+
+function isCustomResidue(mod) {
+    const residueKey = getResidueKey(mod);
+    return appState.manualLabels.has(residueKey)
+        || appState.customColors.has(residueKey)
+        || appState.customStyles.has(residueKey)
+        || appState.customNotes.has(residueKey);
+}
+
+export function buildCustomList() {
+    const customList = document.getElementById('customList');
+    if (!customList) return;
+
+    customList.innerHTML = '';
+
+    const customKeys = new Set([
+        ...appState.manualLabels.keys(),
+        ...appState.customColors.keys(),
+        ...appState.customStyles.keys(),
+        ...appState.customNotes.keys()
+    ]);
+
+    if (customKeys.size === 0) {
+        customList.innerHTML = '<li class="empty-msg">No custom residues.</li>';
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    appState.modifications.forEach((mod) => {
+        const residueKey = getResidueKey(mod);
+        if (!customKeys.has(residueKey)) return;
+        // Hidden residues NOT shown in custom tab
+        if (appState.hiddenResidues.has(residueKey)) return;
+
+        const item = document.createElement('li');
+        item.dataset.idx = mod._index;
+
+        const customColor = appState.customColors && appState.customColors.get(residueKey);
+
+        let colorToUse;
+        if (appState.isPositionalOnly) {
+            colorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+        } else {
+            colorToUse = mod._perModPalette ? mod._perModPalette.hex : mod._analyticPalette.hex;
+        }
+        if (customColor) colorToUse = customColor;
+
+        item.style.setProperty('--card-color', colorToUse);
+
+        const refColorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
+        item.style.setProperty('--card-color-ref', refColorToUse);
+
+        const metadataMarkup = buildMetadataMarkup(mod);
+
+        if (!mod._isResolved) {
+            item.classList.add('li-absent');
+        }
+
+        let chainClasses = 'li-chain ';
+        let chainTitle = '';
+        if (mod.status === 'match') {
+            chainClasses += 'bg-green-500/20 text-green-700 border border-transparent';
+            chainTitle = 'Match';
+        } else if (mod.status === 'novel') {
+            chainClasses += 'bg-red-500/20 text-red-700 border border-transparent';
+            chainTitle = 'Novel';
+        } else if (mod.status === 'missing') {
+            chainClasses += 'border border-dashed border-gray-400 text-gray-500 bg-transparent';
+            chainTitle = 'Missing';
+        } else {
+            chainClasses += 'bg-gray-500/20 text-gray-700 border border-transparent';
+        }
+
+        const paperName = mod._inspectorName;
+        const eyeIconClass = 'fa-eye-slash';
+        const eyeTitle = 'Hide residue';
+
+        item.innerHTML = `
+            <div class="card-actions">
+                <button class="card-action-btn card-edit-btn" type="button" title="Edit residue" aria-label="Edit">
+                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                </button>
+                <button class="card-action-btn card-hide-btn" type="button" title="${eyeTitle}" aria-label="${eyeTitle}">
+                    <i class="fa-solid ${eyeIconClass}" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="li-paper-name">
+                <span title="${paperName}">${paperName}</span>
+            </div>
+            <span class="${chainClasses}" title="${chainTitle}">${mod.chain}</span>
+            ${metadataMarkup}
+        `;
+
+        mod._customDomNode = item;
+        fragment.appendChild(item);
+    });
+
+    if (fragment.childElementCount === 0) {
+        customList.innerHTML = '<li class="empty-msg">No custom residues.</li>';
+        return;
+    }
+
+    customList.appendChild(fragment);
+
+    // Bind click handling for custom list
+    bindCustomListClicks(customList);
+}
+
+function bindCustomListClicks(customList) {
+    // Use event delegation  
+    customList.onclick = (event) => {
+        const hideBtn = event.target.closest('.card-hide-btn');
+        if (hideBtn) {
+            const item = hideBtn.closest('li');
+            if (!item) return;
+            const mod = appState.modifications[item.dataset.idx];
+            if (mod && onResidueHideToggle) onResidueHideToggle(mod);
+            return;
+        }
+
+        const editBtn = event.target.closest('.card-edit-btn');
+        if (editBtn) {
+            const item = editBtn.closest('li');
+            if (!item) return;
+            const mod = appState.modifications[item.dataset.idx];
+            if (mod && onCardEditClick) {
+                const rect = item.getBoundingClientRect();
+                onCardEditClick(mod, rect);
+            }
+            return;
+        }
+
+        const unlinkButton = event.target.closest('.unlink-pair-btn');
+        if (unlinkButton) {
+            const pairId = Number(unlinkButton.dataset.pairId);
+            if (onPairUnlink && Number.isFinite(pairId)) onPairUnlink(pairId);
+            return;
+        }
+
+        const item = event.target.closest('li');
+        if (!item || item.classList.contains('empty-msg')) return;
+
+        const meta = item.querySelector('.li-meta');
+        const isAlreadyExpanded = item.classList.contains('li-expanded');
+        const shouldExpand = meta && !isAlreadyExpanded;
+
+        collapseAllExpandedItems(customList);
+        if (shouldExpand) item.classList.add('li-expanded');
+
+        const mod = appState.modifications[item.dataset.idx];
+        if (!mod || !onResidueSelected) return;
+
+        if (mod._isResolved) {
+            scheduleResidueSelection(mod, 'list');
+        }
+    };
 }

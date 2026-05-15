@@ -16,7 +16,11 @@ import {
     setFilterType,
     setSortMode,
     selectCardForMod,
-    refreshResidueCard
+    refreshResidueCard,
+    toggleResidueHidden,
+    buildCustomList,
+    setResidueHideToggleHandler,
+    setCardEditHandler
 } from './ui/mod-list.js';
 import {
     clearAllMeasurementPairs,
@@ -120,6 +124,8 @@ export function initializeApp() {
     setMeasurementPairUnlinkHandler(handlePairUnlink);
     setMeasurementPairSelectionHandler(handlePairFocus);
     set3DmolResiduePickHandler(handleViewerResiduePick);
+    setResidueHideToggleHandler(handleResidueHideToggle);
+    setCardEditHandler(handleCardEditClick);
 
     bindLoadOverlayControls();
     bindLeftSidebarPanels();
@@ -139,6 +145,7 @@ export function initializeApp() {
     bindPymolExport();
     bindResidueContextMenu();
     bindGlobalMeasurementCancel();
+    bindInspectorTabs();
     renderLegend();
     updateRenderButtonState();
 }
@@ -685,12 +692,22 @@ function syncOverlayColorsToActiveMode() {
 function bindLabelTools() {
     document.getElementById('clearLabelsBtn').addEventListener('click', () => {
         let changed = false;
-        if (appState.manualLabels.size > 0 || appState.customColors.size > 0 || appState.customStyles.size > 0) {
+        if (appState.manualLabels.size > 0 || appState.customColors.size > 0 || appState.customStyles.size > 0 || appState.hiddenResidues.size > 0) {
             appState.manualLabels.clear();
             appState.customColors.clear();
             appState.customStyles.clear();
+            appState.hiddenResidues.clear();
             changed = true;
         }
+        // Refresh card colors for every mod
+        appState.modifications.forEach((mod) => {
+            if (mod._domNode) {
+                mod._domNode.classList.remove('li-absent');
+                if (!mod._isResolved) mod._domNode.classList.add('li-absent');
+            }
+            refreshResidueCard(mod);
+        });
+        buildCustomList();
         scheduleInteractionUiRefresh();
         if (changed) updateCurrentEngineStyles({ mode: 'full' });
         showToast('All custom residue modifications removed.');
@@ -727,6 +744,7 @@ function bindResidueContextMenu() {
         
         refreshResidueCard(contextMenuResidue);
         updateInteractionPanels();
+        buildCustomList();
     });
 
     viewer.addEventListener('contextmenu', (event) => {
@@ -759,25 +777,44 @@ function bindResidueContextMenu() {
             closeResidueContextMenu();
             updateCurrentEngineStyles({ mode: 'full' });
             updateInteractionPanels();
+            buildCustomList();
         });
     });
 
-    menu.querySelectorAll('button[data-action="style"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+    // Style toggle (sphere ↔ stick)
+    const styleToggleBtn = document.getElementById('menuStyleToggleBtn');
+    if (styleToggleBtn) {
+        styleToggleBtn.addEventListener('click', () => {
             if (!contextMenuResidue) return;
-            const style = btn.dataset.style;
             const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
+            const currentStyle = appState.customStyles.get(residueKey) || 'sphere';
+            const newStyle = currentStyle === 'sphere' ? 'stick' : 'sphere';
             
-            if (style === 'sphere') {
+            if (newStyle === 'sphere') {
                 appState.customStyles.delete(residueKey);
             } else {
-                appState.customStyles.set(residueKey, style);
+                appState.customStyles.set(residueKey, newStyle);
             }
             
+            // Update toggle label/icon
+            updateStyleToggleUI(residueKey);
             closeResidueContextMenu();
             updateCurrentEngineStyles({ mode: 'full' });
+            buildCustomList();
         });
-    });
+    }
+
+    // Hide button
+    const hideBtn = document.getElementById('menuHideBtn');
+    if (hideBtn) {
+        hideBtn.addEventListener('click', () => {
+            if (!contextMenuResidue) return;
+            toggleResidueHidden(contextMenuResidue);
+            closeResidueContextMenu();
+            updateCurrentEngineStyles({ mode: 'full' });
+            updateInteractionPanels();
+        });
+    }
 
     insertLabelBtn.addEventListener('click', () => {
         if (!contextMenuResidue) return;
@@ -786,6 +823,7 @@ function bindResidueContextMenu() {
         closeResidueContextMenu();
         updateCurrentEngineStyles({ mode: 'overlay' });
         scheduleInteractionUiRefresh();
+        buildCustomList();
     });
 
     startMeasureBtn.addEventListener('click', () => {
@@ -840,11 +878,18 @@ function openResidueContextMenu(mod, clientX, clientY) {
         }
     });
 
-    const activeStyle = appState.customStyles.get(residueKey) || 'sphere';
-    menu.querySelectorAll('i[data-style-check]').forEach(icon => {
-        const styleName = icon.dataset.styleCheck;
-        icon.classList.toggle('opacity-0', styleName !== activeStyle);
-    });
+    // Update style toggle
+    updateStyleToggleUI(residueKey);
+
+    // Update hide button state
+    const isHidden = appState.hiddenResidues.has(residueKey);
+    const hideLabel = document.getElementById('menuHideLabel');
+    const hideIcon = document.getElementById('menuHideIcon');
+    if (hideLabel) hideLabel.textContent = isHidden ? 'Show' : 'Hide';
+    if (hideIcon) {
+        hideIcon.classList.toggle('fa-eye', isHidden);
+        hideIcon.classList.toggle('fa-eye-slash', !isHidden);
+    }
 
     const noteInput = document.getElementById('menuNoteInput');
     if (noteInput) {
@@ -872,6 +917,78 @@ function closeResidueContextMenu() {
     contextMenuResidue = null;
     menu.classList.remove('open');
     menu.setAttribute('aria-hidden', 'true');
+}
+
+function updateStyleToggleUI(residueKey) {
+    const activeStyle = appState.customStyles.get(residueKey) || 'sphere';
+    const label = document.getElementById('menuStyleToggleLabel');
+    const icon = document.getElementById('menuStyleToggleIcon');
+    if (label) label.textContent = activeStyle === 'stick' ? 'Sticks' : 'Spheres';
+    if (icon) {
+        icon.classList.toggle('fa-circle', activeStyle === 'sphere');
+        icon.classList.toggle('fa-minus', activeStyle === 'stick');
+    }
+}
+
+function handleResidueHideToggle(mod) {
+    if (!mod) return;
+    toggleResidueHidden(mod);
+    updateCurrentEngineStyles({ mode: 'full' });
+    updateInteractionPanels();
+}
+
+function handleCardEditClick(mod, cardRect) {
+    if (!mod) return;
+    // Position context menu to the LEFT of the inspector (to the left of the card)
+    const inspector = document.getElementById('dataInspector');
+    const inspectorRect = inspector ? inspector.getBoundingClientRect() : null;
+    
+    let x, y;
+    if (inspectorRect) {
+        // Open to the left of the inspector panel
+        const menu = document.getElementById('residueContextMenu');
+        const menuWidth = menu ? menu.offsetWidth || 210 : 210;
+        x = inspectorRect.left - menuWidth - 8;
+        if (x < 8) x = 8;
+    } else {
+        x = cardRect.left - 220;
+    }
+    y = cardRect.top;
+    
+    openResidueContextMenu(mod, x, y);
+}
+
+function bindInspectorTabs() {
+    const tabBar = document.getElementById('inspectorTabBar');
+    if (!tabBar) return;
+
+    tabBar.addEventListener('click', (event) => {
+        const tab = event.target.closest('[data-inspector-tab]');
+        if (!tab) return;
+
+        const targetTab = tab.dataset.inspectorTab;
+        if (targetTab === appState.activeInspectorTab) return;
+
+        // Update tab bar active state
+        tabBar.querySelectorAll('.inspector-tab').forEach(t => t.classList.remove('is-active'));
+        tab.classList.add('is-active');
+
+        // Switch content
+        const shell = document.querySelector('.inspector-shell');
+        if (shell) {
+            shell.querySelectorAll('.inspector-tab-content').forEach(content => {
+                content.classList.toggle('is-active', content.dataset.tab === targetTab);
+            });
+        }
+
+        const previousTab = appState.activeInspectorTab;
+        appState.activeInspectorTab = targetTab;
+
+        // If switching to/from Custom tab, update 3D view
+        if (targetTab === 'custom' || previousTab === 'custom') {
+            updateCurrentEngineStyles({ mode: 'full' });
+        }
+    });
 }
 
 function bindSidebarToggle() {
@@ -951,7 +1068,7 @@ function renderLegend() {
 
 function bindViewerToggles() {
     const toggleProteins = document.getElementById('toggleProteins');
-    const toggleDatabaseOverlay = document.getElementById('toggleDatabaseOverlay');
+    const toggleStatusOverlay = document.getElementById('toggleStatusOverlay');
     if (!toggleProteins) return;
 
     toggleProteins.addEventListener('change', () => {
@@ -962,26 +1079,17 @@ function bindViewerToggles() {
         }, 'Updating proteins...');
     });
 
-    if (!toggleDatabaseOverlay) return;
+    if (!toggleStatusOverlay) return;
 
-    toggleDatabaseOverlay.addEventListener('change', () => {
-        appState.databaseOverlayEnabled = toggleDatabaseOverlay.checked;
+    toggleStatusOverlay.addEventListener('change', () => {
+        appState.statusOverlayEnabled = toggleStatusOverlay.checked;
         updateCurrentEngineStyles();
-        renderLegend();
     });
 
     const toggleIsolateUnknown = document.getElementById('toggleIsolateUnknown');
     if (toggleIsolateUnknown) {
         toggleIsolateUnknown.addEventListener('change', () => {
             appState.isolateUnknownEnabled = toggleIsolateUnknown.checked;
-            updateCurrentEngineStyles();
-        });
-    }
-
-    const toggleIsolateCustom = document.getElementById('toggleIsolateCustom');
-    if (toggleIsolateCustom) {
-        toggleIsolateCustom.addEventListener('change', () => {
-            appState.isolateCustomEnabled = toggleIsolateCustom.checked;
             updateCurrentEngineStyles();
         });
     }
@@ -1031,7 +1139,11 @@ function exportSessionJson() {
         cameraView: view,
         manualLabels: Array.from(appState.manualLabels.entries()),
         measurementPairs: appState.measurementPairs,
-        modifications: appState.modifications
+        modifications: appState.modifications,
+        customColors: Array.from(appState.customColors.entries()),
+        customStyles: Array.from(appState.customStyles.entries()),
+        customNotes: Array.from(appState.customNotes.entries()),
+        hiddenResidues: Array.from(appState.hiddenResidues)
     };
 
     const fileName = `session-${appState.currentRibo}.json`;
