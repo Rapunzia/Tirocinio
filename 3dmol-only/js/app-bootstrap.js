@@ -718,13 +718,13 @@ function bindResidueContextMenu() {
         if (!contextMenuResidue) return;
         const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
         const text = noteInput.value.trim();
-        
+
         if (text) {
             appState.customNotes.set(residueKey, text);
         } else {
             appState.customNotes.delete(residueKey);
         }
-        
+
         refreshResidueCard(contextMenuResidue);
         updateInteractionPanels();
     });
@@ -738,24 +738,24 @@ function bindResidueContextMenu() {
             if (!contextMenuResidue) return;
             const colorHex = btn.dataset.color;
             const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
-            
+
             if (colorHex === 'auto') {
                 appState.customColors.delete(residueKey);
             } else {
                 appState.customColors.set(residueKey, colorHex);
             }
-            
+
             const colorToUse = colorHex === 'auto' ? contextMenuResidue._palette.hex : colorHex;
-            
+
             if (appState.manualLabels.has(residueKey)) {
                 const payload = appState.manualLabels.get(residueKey);
                 payload.colorHex = colorToUse;
             }
-            
+
             if (contextMenuResidue._domNode) {
                 contextMenuResidue._domNode.style.setProperty('--card-color', colorToUse);
             }
-            
+
             closeResidueContextMenu();
             updateCurrentEngineStyles({ mode: 'full' });
             updateInteractionPanels();
@@ -767,13 +767,13 @@ function bindResidueContextMenu() {
             if (!contextMenuResidue) return;
             const style = btn.dataset.style;
             const residueKey = `${contextMenuResidue.resi}|${contextMenuResidue._authChain}`;
-            
+
             if (style === 'sphere') {
                 appState.customStyles.delete(residueKey);
             } else {
                 appState.customStyles.set(residueKey, style);
             }
-            
+
             closeResidueContextMenu();
             updateCurrentEngineStyles({ mode: 'full' });
         });
@@ -951,7 +951,7 @@ function renderLegend() {
 
 function bindViewerToggles() {
     const toggleProteins = document.getElementById('toggleProteins');
-    const toggleDatabaseOverlay = document.getElementById('toggleDatabaseOverlay');
+    const toggleStatusOverlay = document.getElementById('toggleStatusOverlay');
     if (!toggleProteins) return;
 
     toggleProteins.addEventListener('change', () => {
@@ -962,12 +962,11 @@ function bindViewerToggles() {
         }, 'Updating proteins...');
     });
 
-    if (!toggleDatabaseOverlay) return;
+    if (!toggleStatusOverlay) return;
 
-    toggleDatabaseOverlay.addEventListener('change', () => {
-        appState.databaseOverlayEnabled = toggleDatabaseOverlay.checked;
+    toggleStatusOverlay.addEventListener('change', () => {
+        appState.statusOverlayEnabled = toggleStatusOverlay.checked;
         updateCurrentEngineStyles();
-        renderLegend();
     });
 
     const toggleIsolateUnknown = document.getElementById('toggleIsolateUnknown');

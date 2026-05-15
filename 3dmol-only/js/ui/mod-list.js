@@ -94,10 +94,10 @@ function buildMetadataMarkup(mod) {
 
 export function refreshResidueCard(mod) {
     if (!mod || !mod._domNode) return;
-    
+
     const residueKey = getResidueKey(mod);
     const customColor = appState.customColors && appState.customColors.get(residueKey);
-    
+
     let colorToUse;
     if (appState.isPositionalOnly) {
         colorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
@@ -105,14 +105,14 @@ export function refreshResidueCard(mod) {
         colorToUse = mod._perModPalette ? mod._perModPalette.hex : mod._analyticPalette.hex;
     }
     if (customColor) colorToUse = customColor;
-    
+
     mod._domNode.style.setProperty('--card-color', colorToUse);
 
     const refColorToUse = mod._databasePerModPalette ? mod._databasePerModPalette.hex : mod._databasePalette.hex;
     mod._domNode.style.setProperty('--card-color-ref', refColorToUse);
-    
+
     const wasExpanded = mod._domNode.classList.contains('li-expanded');
-    
+
     let chainClasses = 'li-chain ';
     let chainTitle = '';
     if (mod.status === 'match') {
@@ -129,7 +129,7 @@ export function refreshResidueCard(mod) {
     }
 
     const metadataMarkup = buildMetadataMarkup(mod);
-    
+
     mod._domNode.innerHTML = `
         <div class="li-paper-name">
             <span title="${mod._inspectorName}">${mod._inspectorName}</span>
@@ -137,7 +137,7 @@ export function refreshResidueCard(mod) {
         <span class="${chainClasses}" title="${chainTitle}">${mod.chain}</span>
         ${metadataMarkup}
     `;
-    
+
     if (wasExpanded) mod._domNode.classList.add('li-expanded');
 }
 
@@ -388,11 +388,11 @@ export function initModListSelectionHandler(selectionCallback) {
 
         const listElement = document.getElementById('modList');
         const meta = item.querySelector('.li-meta');
-        
+
         const isAlreadySelected = item.classList.contains('selected');
         const isAlreadyExpanded = item.classList.contains('li-expanded');
         const shouldExpand = meta && !isAlreadyExpanded;
-        
+
         collapseAllExpandedItems(listElement);
         if (shouldExpand) item.classList.add('li-expanded');
 
@@ -438,6 +438,20 @@ export function generateDOMList() {
         listElement.innerHTML = '<li class="empty-msg">Load files to see residues...</li>';
         document.getElementById('residueCount').textContent = '\u2014';
         return;
+    }
+
+    const toggleContainer = document.getElementById('statusOverlayToggleContainer');
+    if (toggleContainer) {
+        if (appState.isPositionalOnly) {
+            toggleContainer.style.display = 'none';
+            if (appState.statusOverlayEnabled) {
+                appState.statusOverlayEnabled = false;
+                const toggle = document.getElementById('toggleStatusOverlay');
+                if (toggle) toggle.checked = false;
+            }
+        } else {
+            toggleContainer.style.display = '';
+        }
     }
 
     getSortedModifications().forEach((mod) => {

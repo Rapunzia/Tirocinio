@@ -1,5 +1,5 @@
 import { appState } from '../state.js';
-import { rnaConfig } from '../constants.js';
+import { rnaConfig, statusPalette } from '../constants.js';
 import { buildResidueKey, getModificationsHydrationToken } from '../data/modifications.js';
 import { setLoading, finishProgress } from '../ui/loading.js';
 import { showToast } from '../ui/toast.js';
@@ -154,9 +154,22 @@ function getChainResiduesMap3Dmol() {
     return map;
 }
 
-function buildDualStyleGroups(useDatabaseOverlay, isolateUnknown) {
+function darkenHex(hex, amount = 40) {
+    if (!hex) return '#000000';
+    let r = parseInt(hex.substring(1, 3), 16);
+    let g = parseInt(hex.substring(3, 5), 16);
+    let b = parseInt(hex.substring(5, 7), 16);
+
+    r = Math.max(0, r - amount);
+    g = Math.max(0, g - amount);
+    b = Math.max(0, b - amount);
+
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function buildStyleGroups(isolateUnknown) {
     const hydrationToken = getModificationsHydrationToken();
-    const cacheKey = `${hydrationToken}|${useDatabaseOverlay}|${isolateUnknown}`;
+    const cacheKey = `${hydrationToken}|${isolateUnknown}`;
 
     const cached = styleGroupCache3Dmol.get(cacheKey);
     if (cached) return cached;
@@ -171,31 +184,30 @@ function buildDualStyleGroups(useDatabaseOverlay, isolateUnknown) {
         if (!modPalette) return;
 
         let modColor = modPalette.hex;
-        let refColor = modColor;
         let hasRefMods = false;
 
         const refPalette = getRefPalette(mod);
-        hasRefMods = Array.isArray(mod.ref_mods) && mod.ref_mods.length > 0;
-
-        if (hasRefMods && refPalette) {
-            refColor = refPalette.hex;
+        if (Array.isArray(mod.ref_mods) && mod.ref_mods.length > 0 && refPalette) {
+            hasRefMods = true;
         }
 
-        if (appState.isPositionalOnly && hasRefMods && refPalette) {
-            modColor = refColor;
-        } else if (!useDatabaseOverlay) {
-            refColor = modColor;
+        if (appState.isPositionalOnly) {
+            if (hasRefMods) {
+                modColor = refPalette.hex;
+            } else {
+                modColor = '#A9A9A9';
+            }
         }
 
         const chain = mod._authChain;
-        const key = `${chain}|${modColor}|${refColor}|${hasRefMods}`;
+        const status = mod.status || 'fallback';
+        const key = `${chain}|${modColor}|${status}`;
 
         if (!groups[key]) {
             groups[key] = {
                 chain,
                 modColor,
-                refColor,
-                hasRefMods,
+                status,
                 resi: []
             };
         }
@@ -205,7 +217,6 @@ function buildDualStyleGroups(useDatabaseOverlay, isolateUnknown) {
 
     const result = Object.values(groups);
 
-    // Evict stale entries from previous hydration tokens.
     styleGroupCache3Dmol.forEach((_value, existingKey) => {
         if (!existingKey.startsWith(`${hydrationToken}|`)) {
             styleGroupCache3Dmol.delete(existingKey);
@@ -748,7 +759,8 @@ function apply3DmolBaseStylesOnly() {
 function apply3DmolAnnotationStyles() {
     if (!appState.viewer3Dmol) return;
 
-    const dualGroups = buildDualStyleGroups(appState.databaseOverlayEnabled, appState.isolateUnknownEnabled);
+    const isolateUnknown = appState.isolateUnknownEnabled;
+    const groups = buildStyleGroups(isolateUnknown);
     const config = rnaConfig[appState.currentRibo];
 
     const customKeys = new Set([
@@ -758,7 +770,7 @@ function apply3DmolAnnotationStyles() {
         ...appState.customNotes.keys()
     ]);
 
-    dualGroups.forEach((group) => {
+    groups.forEach((group) => {
         let chainDefaultColor = '#cccccc';
         if (config && config.chains) {
             const chainConfig = Object.values(config.chains).find(c => c.auth === group.chain);
@@ -767,13 +779,28 @@ function apply3DmolAnnotationStyles() {
             }
         }
 
-        const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
-        
+        const baseOpacity = isolateUnknown ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
+
+        let customResi = [];
+        let nonCustomResi = [];
+
+        if (appState.isolateCustomEnabled) {
+            group.resi.forEach(r => {
+                if (customKeys.has(`${r}|${group.chain}`)) {
+                    customResi.push(r);
+                } else {
+                    nonCustomResi.push(r);
+                }
+            });
+        } else {
+            customResi = group.resi;
+        }
+
         let labelResStyle = null;
         if (appState.statusOverlayEnabled) {
             let bgColor = statusPalette[group.status] ? statusPalette[group.status].hex : statusPalette.fallback.hex;
             if (group.status === 'missing') bgColor = '#ffffff';
-            
+
             const borderColor = darkenHex(bgColor, 50);
 
             labelResStyle = {
@@ -785,76 +812,48 @@ function apply3DmolAnnotationStyles() {
                 borderColor: borderColor
             };
         }
-        
-        let customResi = group.resi;
-        let nonCustomResi = [];
-        
-        if (appState.isolateCustomEnabled) {
-            customResi = [];
-            group.resi.forEach(r => {
-                if (customKeys.has(`${r}|${group.chain}`)) {
-                    customResi.push(r);
-                } else {
-                    nonCustomResi.push(r);
-                }
-            });
-        }
+
+        const buildStyleObj = (isCustom) => {
+            const style = { cartoon: { color: chainDefaultColor, opacity: baseOpacity } };
+            if (isCustom) {
+                style.sphere = { color: group.modColor, radius: 2.0, opacity: 1.0 };
+            }
+            return style;
+        };
 
         if (customResi.length > 0) {
-            appState.viewer3Dmol.setStyle(
-                { chain: group.chain, resi: customResi },
-                {
-                    cartoon: { color: chainDefaultColor, opacity: baseOpacity },
-                    sphere: { color: group.modColor, radius: 2.0, opacity: 1.0 }
-                }
-            );
+            appState.viewer3Dmol.setStyle({ chain: group.chain, resi: customResi }, buildStyleObj(true));
         }
 
         if (nonCustomResi.length > 0) {
-            appState.viewer3Dmol.setStyle(
-                { chain: group.chain, resi: nonCustomResi },
-                {
-                    cartoon: { color: chainDefaultColor, opacity: baseOpacity }
-                }
-            );
+            appState.viewer3Dmol.setStyle({ chain: group.chain, resi: nonCustomResi }, buildStyleObj(false));
         }
 
         if (labelResStyle) {
             appState.viewer3Dmol.addResLabels({ chain: group.chain, resi: group.resi }, labelResStyle);
         }
-
-        if (appState.databaseOverlayEnabled && group.hasRefMods) {
-            const overlayResi = appState.isolateCustomEnabled ? customResi : group.resi;
-            if (overlayResi.length > 0) {
-                appState.viewer3Dmol.addStyle(
-                    { chain: group.chain, resi: overlayResi, atom: "C1'" },
-                    {
-                        sphere: { color: group.refColor, radius: 2.5, wireframe: false, opacity: 1.0 }
-                    }
-                );
-            }
-        }
     });
 
-    if (appState.customColors.size > 0 || appState.customStyles.size > 0) {
+    if (appState.customColors && appState.customStyles && (appState.customColors.size > 0 || appState.customStyles.size > 0)) {
         const processedKeys = new Set([...appState.customColors.keys(), ...appState.customStyles.keys()]);
-        
+
         processedKeys.forEach(key => {
             const [resiStr, chain] = key.split('|');
             let chainDefaultColor = '#cccccc';
             if (config && config.chains) {
                 const chainConfig = Object.values(config.chains).find(c => c.auth === chain);
-                if (chainConfig) {
+                if (chainConfig && chainConfig.defaultColor) {
                     chainDefaultColor = chainConfig.defaultColor;
                 }
             }
-            const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
-            
+            const baseOpacity = isolateUnknown ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
+
             const mod = appState.modifications.find(m => String(m.resi) === resiStr && m._authChain === chain);
             const modColor = mod ? mod._palette.hex : chainDefaultColor;
+
             const customColor = appState.customColors.get(key) || modColor;
             const customStyle = appState.customStyles.get(key) || 'sphere';
-            
+
             const styleObj = {
                 cartoon: { color: chainDefaultColor, opacity: baseOpacity }
             };
@@ -883,7 +882,7 @@ function apply3DmolAnnotationStyles() {
                     borderThickness: 1,
                     borderColor: finalBorderColor
                 };
-                
+
                 appState.viewer3Dmol.addResLabels({ chain, resi: resiStr }, customLabelResStyle);
             }
         });
@@ -1046,39 +1045,4 @@ export function exportSnapshot() {
             apply3DmolStyles();
         }
     }, 100);
-}
-export function refresh3DmolProteinsOnly() {
-    if (!appState.viewer3Dmol) return false;
-
-    const config = rnaConfig[appState.currentRibo];
-    if (!config || !config.chains) return false;
-
-    const showProteins = document.getElementById('toggleProteins')?.checked !== false;
-    const rnaChains = Object.values(config.chains)
-        .map((chainConfig) => chainConfig.auth)
-        .filter(Boolean);
-
-    if (rnaChains.length > 0) {
-        const proteinSelection = { not: { chain: rnaChains } };
-        const baseOpacity = appState.isolateUnknownEnabled ? Math.min(0.2, appState.currentOpacity) : appState.currentOpacity;
-        if (showProteins) {
-            appState.viewer3Dmol.setStyle(proteinSelection, {
-                cartoon: { color: '#E0E0E0', opacity: baseOpacity }
-            });
-        } else {
-            appState.viewer3Dmol.setStyle(proteinSelection, {});
-        }
-    }
-
-    appState.viewer3Dmol.render();
-    return true;
-}
-
-function darkenHex(hex, percent) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const amt = Math.round(2.55 * percent);
-    const R = (num >> 16) - amt;
-    const G = (num >> 8 & 0x00FF) - amt;
-    const B = (num & 0x0000FF) - amt;
-    return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
 }
